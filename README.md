@@ -1,0 +1,2 @@
+# SpellCheck
+FixKey clone
