@@ -285,9 +285,10 @@ final class SettingsWindowController: NSWindowController {
     }
 
     func commit(_ settings: AppSettings) {
+        let snapshot = settings
         if let store {
             Task {
-                try? await store.update { $0 = settings }
+                try? await store.update { _ in snapshot }
             }
         }
         onChange(settings)

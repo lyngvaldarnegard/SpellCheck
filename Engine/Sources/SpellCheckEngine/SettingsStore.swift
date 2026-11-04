@@ -26,9 +26,8 @@ public actor SettingsStore {
 
     public func load() -> Settings { cache }
 
-    public func update(_ transform: (inout Settings) -> Void) throws {
-        var next = cache
-        transform(&next)
+    public func update(_ transform: @Sendable (Settings) -> Settings) throws {
+        let next = transform(cache)
         let data = try JSONEncoder().encode(next)
         try data.write(to: url, options: .atomic)
         cache = next

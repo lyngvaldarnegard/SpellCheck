@@ -55,10 +55,12 @@ struct SettingsStoreTests {
         defer { try? FileManager.default.removeItem(at: dir) }
         let store = try SettingsStore(directory: dir)
 
-        try await store.update { settings in
-            settings.apiKey = "sk-test"
-            settings.backend = .openAICompatible
-            settings.customPrompts = [CustomPrompt(name: "Pirate", prompt: "Rewrite as a pirate")]
+        try await store.update { current in
+            var next = current
+            next.apiKey = "sk-test"
+            next.backend = .openAICompatible
+            next.customPrompts = [CustomPrompt(name: "Pirate", prompt: "Rewrite as a pirate")]
+            return next
         }
 
         let reloaded = try SettingsStore(directory: dir)
