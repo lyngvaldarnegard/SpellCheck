@@ -45,7 +45,7 @@ final class HotKeyMonitor: @unchecked Sendable {
         var hotKeyRefOut: EventHotKeyRef?
         let registerStatus = RegisterEventHotKey(
             hotKey.keyCode,
-            CGEventFlags(rawValue: hotKey.modifiers).union(.deviceIndependentFlagsMask),
+            carbonModifiers(hotKey.modifiers),
             hotKeyID,
             GetApplicationEventTarget(),
             0,
@@ -72,5 +72,16 @@ final class HotKeyMonitor: @unchecked Sendable {
 
     deinit {
         stop()
+    }
+
+    /// Converts the CGEventFlags-style bits stored in `HotKey` into the Carbon
+    /// modifier mask that `RegisterEventHotKey` expects.
+    private func carbonModifiers(_ flags: UInt32) -> UInt32 {
+        var result: UInt32 = 0
+        if flags & ModifierFlags.command != 0 { result |= UInt32(cmdKey) }
+        if flags & ModifierFlags.shift != 0 { result |= UInt32(shiftKey) }
+        if flags & ModifierFlags.option != 0 { result |= UInt32(optionKey) }
+        if flags & ModifierFlags.control != 0 { result |= UInt32(controlKey) }
+        return result
     }
 }

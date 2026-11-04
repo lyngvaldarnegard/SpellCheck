@@ -6,12 +6,12 @@ import SpellCheckEngine
 @MainActor
 final class StatusBarController: NSObject {
     private let statusItem: NSStatusItem
-    private(set) var settings: Settings
+    var settings: AppSettings
     weak var appDelegate: AppDelegate?
 
     private var statusMenu: NSMenu!
 
-    init(settings: Settings) {
+    init(settings: AppSettings) {
         self.settings = settings
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         super.init()

@@ -5,7 +5,7 @@ import SpellCheckEngine
 /// SwiftUI settings window content. All state lives in the engine's
 /// `SettingsStore`; changes are committed through `onChange`.
 struct SettingsView: View {
-    @State private var settings: Settings
+    @State private var settings: AppSettings
     @State private var availableModels: [String] = []
     @State private var isFetchingModels = false
     @State private var modelsError: String?
@@ -254,20 +254,20 @@ private struct HotKeyRecorderRepresentable: NSViewRepresentable {
                 onRecord?(0, 0)
                 return
             }
-            let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask).rawValue
+            let modifiers = UInt32(event.modifierFlags.intersection(.deviceIndependentFlagsMask).rawValue)
             onRecord?(UInt32(event.keyCode), modifiers)
         }
     }
 }
 
 @MainActor
-final class SettingsWindowController: NSObject, NSWindowController {
+final class SettingsWindowController: NSWindowController {
     private let store: SettingsStore?
-    var initialSettings: Settings
-    var draft: Settings
-    private let onChange: (Settings) -> Void
+    var initialSettings: AppSettings
+    var draft: AppSettings
+    private let onChange: (AppSettings) -> Void
 
-    init(store: SettingsStore?, settings: Settings, onChange: @escaping (Settings) -> Void) {
+    init(store: SettingsStore?, settings: AppSettings, onChange: @escaping (AppSettings) -> Void) {
         self.store = store
         self.initialSettings = settings
         self.draft = settings
@@ -289,7 +289,7 @@ final class SettingsWindowController: NSObject, NSWindowController {
         fatalError("init(coder:) is not supported")
     }
 
-    func commit(_ settings: Settings) {
+    func commit(_ settings: AppSettings) {
         draft = settings
         if let store {
             Task {

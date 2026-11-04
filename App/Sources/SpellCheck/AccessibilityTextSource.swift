@@ -3,75 +3,63 @@ import ApplicationServices
 import SpellCheckCore
 import SpellCheckEngine
 
+nonisolated(unsafe) private let axPromptKey = kAXTrustedCheckOptionPrompt as String
+
 /// Grabs the current selection — or, when nothing is selected, the sentence
 /// around the caret — from the frontmost application through the Accessibility
-/// API, and can type the corrected text back over it.
+/// API, and types the corrected text back over the same range.
 final class AccessibilityTextSource: TextSource, @unchecked Sendable {
 
-    private let options: [String: Any] = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
-
     func grab() async throws -> GrabbedText {
-        guard AXIsProcessTrustedWithOptions(options as CFDictionary) else {
+        guard AXIsProcessTrustedWithOptions([axPromptKey: true] as CFDictionary) else {
             throw TextSourceError.accessDenied
         }
         let systemWide = AXUIElementCreateSystemWide()
-        let focusedApp = try await copyAttribute(kAXFocusedApplicationAttribute, from: systemWide)
-        guard let appElement: AXUIElement = focusedApp else {
+        guard let appElement = copyAttribute(kAXFocusedApplicationAttribute, from: systemWide, as: AXUIElement.self) else {
             throw TextSourceError.noText
         }
-        let focusedUI = try await copyAttribute(kAXFocusedUIElementAttribute, from: appElement)
-        guard let element: AXUIElement = focusedUI else {
+        guard let element = copyAttribute(kAXFocusedUIElementAttribute, from: appElement, as: AXUIElement.self) else {
+            throw TextSourceError.noText
+        }
+        guard let document = copyAttribute(kAXValueAttribute, from: element, as: String.self), !document.isEmpty else {
+            throw TextSourceError.noText
+        }
+        guard let rangeValue = copyAttribute(kAXSelectedTextRangeAttribute, from: element, as: AXValue.self),
+              let range = cfRange(of: rangeValue) else {
             throw TextSourceError.noText
         }
 
-        if let selectedRangeValue = try? copyAttribute(kAXSelectedTextRangeAttribute, from: element),
-           let selectedRange: AXValue = selectedRangeValue,
-           let selectedTextValue = try? copyAttribute(kAXSelectedTextAttribute, from: element),
-           let selectedText = selectedTextValue as? String,
-           !selectedText.isEmpty {
-            return GrabbedText(scope: .selection(selectedText)) { newText in
-                await self.typeOverSelection(newText, rangeValue: selectedRange)
+        if range.length > 0,
+           let selected = copyAttribute(kAXSelectedTextAttribute, from: element, as: String.self),
+           !selected.isEmpty {
+            let location = range.location
+            let length = range.length
+            return GrabbedText(scope: .selection(selected)) { [weak self] newText in
+                await self?.replace(rangeLocation: location, length: length, in: element, with: newText) ?? false
             }
         }
 
-        guard let fullTextValue = try? copyAttribute(kAXValueAttribute, from: element),
-              let document = fullTextValue as? String,
-              let caretRangeValue = try? copyAttribute(kAXSelectedTextRangeAttribute, from: element),
-              let caretRange: AXValue = caretRangeValue,
-              let caretOffset = caretOffset(of: caretRange),
-              let extraction = TextScopeExtractor.sentence(in: document, caretOffset: caretOffset) else {
+        let caret = range.location + range.length
+        guard let extraction = TextScopeExtractor.sentence(in: document, caretOffset: caret) else {
             throw TextSourceError.noText
         }
-        return GrabbedText(scope: .sentence(extraction.text)) { newText in
-            await self.replaceSentence(newText, in: document, location: extraction.utf16Location, length: extraction.utf16Length, element: element)
+        let location = extraction.utf16Location
+        let length = extraction.utf16Length
+        return GrabbedText(scope: .sentence(extraction.text)) { [weak self] newText in
+            await self?.replace(rangeLocation: location, length: length, in: element, with: newText) ?? false
         }
     }
 
-    private func caretOffset(of range: AXValue) -> Int? {
-        var point = CGPoint.zero
-        guard AXValueGetType(range) == .cgPoint else { return nil }
-        AXValueGetValue(range, .cgPoint, &point)
-        return Int(point.x)
-    }
-
-    private func typeOverSelection(_ text: String, rangeValue: AXValue) async -> Bool {
-        // Select the exact range again, then paste the replacement via the
-        // clipboard so apps with custom text views behave.
-        setAttribute(kAXSelectedTextRangeAttribute, value: rangeValue)
-        return paste(text)
-    }
-
-    private func replaceSentence(
-        _ text: String,
-        in document: String,
-        location: Int,
-        length: Int,
-        element: AXUIElement
-    ) async -> Bool {
+    /// Selects the given UTF-16 range in the element and pastes `newText` over
+    /// it via the clipboard (Cmd-V), which works in any app honoring AX text
+    /// selection.
+    private func replace(rangeLocation location: Int, length: Int, in element: AXUIElement, with newText: String) async -> Bool {
         var cfRange = CFRange(location: location, length: length)
         guard let rangeValue = AXValueCreate(.cfRange, &cfRange) else { return false }
-        setAttribute(kAXSelectedTextRangeAttribute, value: rangeValue, element: element)
-        return paste(text)
+        guard AXUIElementSetAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, rangeValue) == .success else {
+            return false
+        }
+        return paste(newText)
     }
 
     private func paste(_ text: String) -> Bool {
@@ -79,43 +67,27 @@ final class AccessibilityTextSource: TextSource, @unchecked Sendable {
         pasteboard.clearContents()
         guard pasteboard.setString(text, forType: .string) else { return false }
         let source = CGEventSource(stateID: .hidSystemState)
-        let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 0x09 /* V */, keyDown: true)
-        let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: false)
-        keyDown?.flags = .maskCommand
-        keyUp?.flags = .maskCommand
-        keyDown?.post(tap: .cghidEventTap)
-        keyUp?.post(tap: .cghidEventTap)
+        guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: true),
+              let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 0x09, keyDown: false) else {
+            return false
+        }
+        keyDown.flags = .maskCommand
+        keyUp.flags = .maskCommand
+        keyDown.post(tap: .cghidEventTap)
+        keyUp.post(tap: .cghidEventTap)
         return true
     }
 
-    private func setAttribute(_ attribute: String, value: Any, element: AXUIElement? = nil) {
-        let target = element ?? AccessibilityTextSource.currentFocusedElement()
-        guard let target else { return }
-        var value = value
-        AXUIElementSetAttributeValue(target, attribute as CFString, &value as CFTypeRef)
+    private func cfRange(of value: AXValue) -> CFRange? {
+        guard AXValueGetType(value) == .cfRange else { return nil }
+        var range = CFRange(location: 0, length: 0)
+        guard AXValueGetValue(value, .cfRange, &range) else { return nil }
+        return range
     }
 
-    private static func currentFocusedElement() -> AXUIElement? {
-        let systemWide = AXUIElementCreateSystemWide()
-        var appRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(systemWide, kAXFocusedApplicationAttribute as CFString, &appRef) == .success,
-              let app = appRef else { return nil }
-        var elementRef: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(app as! AXUIElement, kAXFocusedUIElementAttribute as CFString, &elementRef) == .success else {
-            return nil
-        }
-        return elementRef as AXUIElement?
-    }
-
-    private func copyAttribute(_ attribute: String, from element: AXUIElement) async throws -> Any? {
-        try await withCheckedThrowingContinuation { continuation in
-            var result: AnyObject?
-            let status = AXUIElementCopyAttributeValue(element, attribute as CFString, &result)
-            if status == .success {
-                continuation.resume(returning: result)
-            } else {
-                continuation.resume(throwing: TextSourceError.noText)
-            }
-        }
+    private func copyAttribute<T>(_ attribute: CFString, from element: AXUIElement, as type: T.Type) -> T? {
+        var result: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, attribute, &result) == .success else { return nil }
+        return result as? T
     }
 }

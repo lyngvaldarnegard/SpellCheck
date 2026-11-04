@@ -3,13 +3,19 @@ import SwiftUI
 import SpellCheckCore
 import SpellCheckEngine
 
+typealias AppSettings = SpellCheckCore.Settings
+
 @main
 struct SpellCheckApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
         SettingsWindowGroup {
-            SettingsView(controller: appDelegate.settingsController)
+            if let controller = appDelegate.settingsController {
+                SettingsView(controller: controller)
+            } else {
+                Text("Loading…")
+            }
         }
     }
 }
@@ -21,7 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotKeyMonitor: HotKeyMonitor?
     private var engine: CorrectionEngine?
     private var settingsStore: SettingsStore?
-    private(set) var settings: Settings = .default
+    private(set) var settings: AppSettings = .default
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let urls = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
@@ -64,7 +70,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotKeyMonitor?.stop()
     }
 
-    func applySettings(_ newSettings: Settings) {
+    func applySettings(_ newSettings: AppSettings) {
         settings = newSettings
         hotKeyMonitor?.stop()
         hotKeyMonitor = HotKeyMonitor(hotKey: newSettings.hotKey) { [weak self] in
@@ -85,14 +91,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func openSettings() {
-        settingsController.showWindow()
+        settingsController?.showWindow(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     func quit() {
         NSApp.terminate(nil)
     }
 
-    private func makeBackend(from settings: Settings) -> any CorrectionBackend {
+    private func makeBackend(from settings: AppSettings) -> any CorrectionBackend {
         switch settings.backend {
         case .ruleBased:
             return RuleBasedBackend()
