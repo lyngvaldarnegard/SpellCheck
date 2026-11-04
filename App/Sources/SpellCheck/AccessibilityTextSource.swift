@@ -29,13 +29,15 @@ final class AccessibilityTextSource: TextSource, @unchecked Sendable {
             throw TextSourceError.noText
         }
 
+        nonisolated(unsafe) let capturedElement = element
+
         if range.length > 0,
            let selected = copyAttribute(kAXSelectedTextAttribute, from: element, as: String.self),
            !selected.isEmpty {
             let location = range.location
             let length = range.length
             return GrabbedText(scope: .selection(selected)) { [weak self] newText in
-                await self?.replace(rangeLocation: location, length: length, in: element, with: newText) ?? false
+                await self?.replace(rangeLocation: location, length: length, in: capturedElement, with: newText) ?? false
             }
         }
 
@@ -46,7 +48,7 @@ final class AccessibilityTextSource: TextSource, @unchecked Sendable {
         let location = extraction.utf16Location
         let length = extraction.utf16Length
         return GrabbedText(scope: .sentence(extraction.text)) { [weak self] newText in
-            await self?.replace(rangeLocation: location, length: length, in: element, with: newText) ?? false
+            await self?.replace(rangeLocation: location, length: length, in: capturedElement, with: newText) ?? false
         }
     }
 
