@@ -72,9 +72,6 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .frame(minWidth: 520, minHeight: 480)
-        .onChange(of: settings) { _, newValue in
-            controller.draft = newValue
-        }
     }
 
     private var providerPresets: some View {
@@ -264,13 +261,11 @@ private struct HotKeyRecorderRepresentable: NSViewRepresentable {
 final class SettingsWindowController: NSWindowController {
     private let store: SettingsStore?
     var initialSettings: AppSettings
-    var draft: AppSettings
     private let onChange: (AppSettings) -> Void
 
     init(store: SettingsStore?, settings: AppSettings, onChange: @escaping (AppSettings) -> Void) {
         self.store = store
         self.initialSettings = settings
-        self.draft = settings
         self.onChange = onChange
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 560, height: 520),
@@ -290,7 +285,6 @@ final class SettingsWindowController: NSWindowController {
     }
 
     func commit(_ settings: AppSettings) {
-        draft = settings
         if let store {
             Task {
                 try? await store.update { $0 = settings }

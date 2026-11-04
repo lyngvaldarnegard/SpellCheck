@@ -34,7 +34,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let supportDir = (urls.first ?? URL(fileURLWithPath: NSHomeDirectory()))
             .appendingPathComponent("SpellCheck", isDirectory: true)
         settingsStore = try? SettingsStore(directory: supportDir)
-        settings = settingsStore?.load() ?? .default
+        NSApp.setActivationPolicy(.accessory)
+
+        Task { @MainActor in
+            await self.setup()
+        }
+    }
+
+    private func setup() async {
+        settings = await settingsStore?.load() ?? .default
 
         let accessibility = AccessibilityTextSource()
         let backend = makeBackend(from: settings)
@@ -62,7 +70,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         hotKeyMonitor?.start()
 
-        NSApp.setActivationPolicy(.accessory)
         NSApp.activate(ignoringOtherApps: false)
     }
 

@@ -3,7 +3,7 @@ import ApplicationServices
 import SpellCheckCore
 import SpellCheckEngine
 
-nonisolated(unsafe) private let axPromptKey = kAXTrustedCheckOptionPrompt as String
+nonisolated(unsafe) private let axPromptKey = "AXTrustedCheckOptionPrompt"
 
 /// Grabs the current selection — or, when nothing is selected, the sentence
 /// around the caret — from the frontmost application through the Accessibility
@@ -85,9 +85,9 @@ final class AccessibilityTextSource: TextSource, @unchecked Sendable {
         return range
     }
 
-    private func copyAttribute<T>(_ attribute: CFString, from element: AXUIElement, as type: T.Type) -> T? {
+    private func copyAttribute<T>(_ attribute: String, from element: AXUIElement, as type: T.Type) -> T? {
         var result: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, attribute, &result) == .success else { return nil }
+        guard AXUIElementCopyAttributeValue(element, attribute as CFString, &result) == .success else { return nil }
         return result as? T
     }
 }
