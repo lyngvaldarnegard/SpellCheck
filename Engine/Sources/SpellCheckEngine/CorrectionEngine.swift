@@ -78,7 +78,7 @@ public actor CorrectionEngine {
         }
     }
 
-    static func message(for error: Error) -> String {
+    public static func message(for error: Error) -> String {
         if let correctionError = error as? CorrectionError {
             switch correctionError {
             case .notConfigured:

@@ -6,6 +6,9 @@ import SpellCheckEngine
 /// `SettingsStore`; changes are committed through `onChange`.
 struct SettingsView: View {
     @State private var settings: Settings
+    @State private var availableModels: [String] = []
+    @State private var isFetchingModels = false
+    @State private var modelsError: String?
     private let controller: SettingsWindowController
 
     init(controller: SettingsWindowController) {
@@ -22,9 +25,11 @@ struct SettingsView: View {
                     }
                 }
                 if settings.backend == .openAICompatible {
+                    providerPresets
                     SecureField("API Key", text: $settings.apiKey)
-                    TextField("Model", text: $settings.model)
+                        .textContentType(.password)
                     TextField("API Base URL", text: $settings.baseURL)
+                    modelPicker
                 }
             }
 
@@ -69,6 +74,112 @@ struct SettingsView: View {
         .frame(minWidth: 520, minHeight: 480)
         .onChange(of: settings) { _, newValue in
             controller.draft = newValue
+        }
+    }
+
+    private var providerPresets: some View {
+        HStack(spacing: 8) {
+            Text("Provider")
+            Spacer()
+            ForEach(APIProviderPreset.allCases) { preset in
+                Button(preset.label) {
+                    applyPreset(preset)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+        }
+    }
+
+    private var modelPicker: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                if availableModels.isEmpty {
+                    TextField("Model (e.g. deepseek-chat)", text: $settings.model)
+                } else {
+                    Picker("Model", selection: $settings.model) {
+                        ForEach(availableModels, id: \.self) { model in
+                            Text(model).tag(model)
+                        }
+                        if !availableModels.contains(settings.model) {
+                            Text("\(settings.model) (custom)").tag(settings.model)
+                        }
+                    }
+                }
+                Button(isFetchingModels ? "Fetching…" : "Fetch models") {
+                    fetchModels()
+                }
+                .disabled(isFetchingModels)
+            }
+            if let modelsError {
+                Text(modelsError)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+            } else if !availableModels.isEmpty {
+                Text("\(availableModels.count) models available from this API")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func applyPreset(_ preset: APIProviderPreset) {
+        settings.baseURL = preset.baseURL
+        settings.model = preset.defaultModel
+        availableModels = []
+        modelsError = nil
+    }
+
+    private func fetchModels() {
+        isFetchingModels = true
+        modelsError = nil
+        let apiKey = settings.apiKey
+        let baseURL = settings.baseURL
+        Task {
+            do {
+                let models = try await ModelCatalog.fetchModels(apiKey: apiKey, baseURL: baseURL)
+                await MainActor.run {
+                    availableModels = models
+                    if let first = models.first, !models.contains(settings.model) {
+                        settings.model = first
+                    }
+                    isFetchingModels = false
+                }
+            } catch {
+                await MainActor.run {
+                    modelsError = CorrectionEngine.message(for: error)
+                    isFetchingModels = false
+                }
+            }
+        }
+    }
+}
+
+private enum APIProviderPreset: String, CaseIterable, Identifiable {
+    case openAI = "OpenAI"
+    case deepSeek = "DeepSeek"
+    case openRouter = "OpenRouter"
+    case ollama = "Ollama (local)"
+
+    var id: String { rawValue }
+
+    var label: String { rawValue }
+
+    var baseURL: String {
+        switch self {
+        case .openAI: return "https://api.openai.com/v1"
+        case .deepSeek: return "https://api.deepseek.com/v1"
+        case .openRouter: return "https://openrouter.ai/api/v1"
+        case .ollama: return "http://localhost:11434/v1"
+        }
+    }
+
+    var defaultModel: String {
+        switch self {
+        case .openAI: return "gpt-4o-mini"
+        case .deepSeek: return "deepseek-chat"
+        case .openRouter: return "deepseek/deepseek-chat"
+        case .ollama: return "llama3.2"
         }
     }
 }

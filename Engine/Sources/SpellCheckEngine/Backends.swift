@@ -40,13 +40,8 @@ public struct OpenAICompatibleBackend: CorrectionBackend {
 
     public func correct(text: String, action: BuiltinAction, customPrompt: String?, language: String?) async throws -> String {
         guard isReady else { throw CorrectionError.notConfigured }
-        let trimmedBase = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard var url = URL(string: trimmedBase.isEmpty ? "https://api.openai.com/v1" : trimmedBase) else {
+        guard let url = APIEndpoint.chatCompletionsURL(baseURL) else {
             throw CorrectionError.backendFailed("The API base URL is not valid")
-        }
-        if !url.path.hasSuffix("/chat/completions") {
-            while url.path.hasSuffix("/") { url.deleteLastPathComponent() }
-            url.appendPathComponent("chat/completions")
         }
         let messages: [ChatMessage]
         if let customPrompt {
