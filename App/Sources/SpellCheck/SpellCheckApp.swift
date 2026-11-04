@@ -27,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotKeyMonitor: HotKeyMonitor?
     private var engine: CorrectionEngine?
     private var settingsStore: SettingsStore?
+    private var updaterController: UpdaterController?
     private(set) var settings: AppSettings = .default
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -70,6 +71,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         hotKeyMonitor?.start()
 
+        updaterController = UpdaterController()
+
         NSApp.activate(ignoringOtherApps: false)
     }
 
@@ -100,6 +103,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func openSettings() {
         settingsController?.showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func checkForUpdates() {
+        updaterController?.checkForUpdates()
     }
 
     func quit() {

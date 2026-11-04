@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: swift-actions/setup-swift@v2
         with:
-          swift-version: "6.0"
+          swift-version: "6.2"
       - name: Test Core
         run: swift test --package-path Core
 
@@ -30,7 +30,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: swift-actions/setup-swift@v2
         with:
-          swift-version: "6.0"
+          swift-version: "6.2"
       - name: Test Engine
         run: swift test --package-path Engine
 
@@ -41,7 +41,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: swift-actions/setup-swift@v2
         with:
-          swift-version: "6.0"
+          swift-version: "6.2"
       - name: Build app
         run: swift build --package-path App -c release
       - name: Test app

@@ -18,5 +18,11 @@
 	<true/>
 	<key>NSAccessibilityUsageDescription</key>
 	<string>SpellCheck needs Accessibility access to read the selected text in other apps and to insert corrections.</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUFeedURL</key>
+	<string>https://raw.githubusercontent.com/lyngvaldarnegard/SpellCheck/main/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>REPLACE_WITH_SPARKLE_PUBLIC_EDDSA_KEY</string>
 </dict>
 </plist>

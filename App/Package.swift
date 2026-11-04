@@ -9,14 +9,16 @@ let package = Package(
     ],
     dependencies: [
         .package(path: "../Core"),
-        .package(path: "../Engine")
+        .package(path: "../Engine"),
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.7.0")
     ],
     targets: [
         .executableTarget(
             name: "SpellCheck",
             dependencies: [
                 .product(name: "SpellCheckCore", package: "Core"),
-                .product(name: "SpellCheckEngine", package: "Engine")
+                .product(name: "SpellCheckEngine", package: "Engine"),
+                .product(name: "Sparkle", package: "Sparkle")
             ],
             path: "Sources/SpellCheck"
         ),

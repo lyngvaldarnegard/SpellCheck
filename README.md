@@ -25,6 +25,10 @@ you were using.
   menu-bar menu.
 - **Confirmation window** — review the original and corrected text side by
   side before anything is replaced (can be turned off).
+- **Auto-update** — built on [Sparkle](https://sparkle-project.org): the app
+  checks an appcast feed (`appcast.xml` on `main`) and offers to download and
+  install new releases. There is also a **Check for Updates…** item in the
+  menu-bar menu.
 
 ## Install
 
@@ -72,6 +76,21 @@ SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)" scripts/package-
 | `App/`    | The macOS menu-bar app (AppKit/SwiftUI): status bar, hot key, Accessibility text source, settings and confirmation windows. Build only on macOS. |
 | `scripts/`| Helper scripts: `test-core.sh`, `test-engine.sh`, `test-app.sh`, `build-app.sh` (assembles `SpellCheck.app`), `package-release.sh` (zips it for Releases). |
 | `App/Info.plist` | App bundle metadata (menu-bar agent, Accessibility usage description). Used when packaging the app bundle in Xcode; SPM ignores it. |
+
+## Auto-update setup (for maintainers)
+
+Updates are served from the `appcast.xml` file on `main`; the `Release`
+workflow regenerates it on every `v*.*.*` tag and signs the zip when the
+`SPARKLE_PRIVATE_KEY` secret is set.
+
+1. Generate a Sparkle key pair (from a Sparkle checkout):
+   `swift run sign_update --generate-keys`
+2. Put the **public** key into `App/Info.plist` → `SUPublicEDKey`.
+3. Add the **private** key as the GitHub repo secret `SPARKLE_PRIVATE_KEY`.
+4. For reliable update installs, also code-sign releases: set the
+   `SIGNING_IDENTITY` secret to your `Developer ID Application: …` identity.
+5. Push a tag: `git tag v0.1.0 && git push origin v0.1.0` — CI builds, tests,
+   signs, publishes the release and updates `appcast.xml`.
 
 ## Using an API provider (e.g. DeepSeek)
 

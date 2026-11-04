@@ -10,14 +10,14 @@ permissions:
 
 jobs:
   build:
-    name: Build and package SpellCheck.app
+    name: Build, package and publish
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
 
       - uses: swift-actions/setup-swift@v2
         with:
-          swift-version: "6.0"
+          swift-version: "6.2"
 
       - name: Run tests
         run: |
@@ -30,8 +30,32 @@ jobs:
         env:
           SIGNING_IDENTITY: ${{ secrets.SIGNING_IDENTITY }}
 
+      - name: Sign update with Sparkle key (optional)
+        if: ${{ secrets.SPARKLE_PRIVATE_KEY != '' }}
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          echo "$SPARKLE_PRIVATE_KEY" > /tmp/sparkle_private_key.pem
+          curl -sL https://github.com/sparkle-project/Sparkle/releases/download/2.7.1/Sparkle-2.7.1.tar.xz -o /tmp/sparkle.tar.xz
+          tar -xf /tmp/sparkle.tar.xz -C /tmp
+          SIG=$(/tmp/Sparkle-2.7.1/bin/sign_update build/SpellCheck-macOS.zip --private-key /tmp/sparkle_private_key.pem)
+          echo "SPARKLE_SIGNATURE=$SIG" >> "$GITHUB_ENV"
+
+      - name: Generate appcast.xml
+        run: scripts/make-appcast.sh "${{ github.ref_name }}" build/SpellCheck-macOS.zip "${{ env.SPARKLE_SIGNATURE }}"
+
+      - name: Commit appcast.xml to main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add appcast.xml
+          git commit -m "Update appcast for ${{ github.ref_name }}" || echo "no appcast changes"
+          git push origin HEAD:main
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: build/SpellCheck-macOS.zip
+          files: |
+            build/SpellCheck-macOS.zip
+            appcast.xml
           generate_release_notes: true

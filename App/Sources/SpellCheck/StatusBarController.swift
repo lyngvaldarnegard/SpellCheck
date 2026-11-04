@@ -75,6 +75,10 @@ final class StatusBarController: NSObject {
         let hotKeyItem = NSMenuItem(title: "Hot Key: \(settings.hotKey.description)", action: nil, keyEquivalent: "")
         menu.addItem(hotKeyItem)
 
+        let updatesItem = NSMenuItem(title: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "")
+        updatesItem.target = self
+        menu.addItem(updatesItem)
+
         let settingsItem = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         settingsItem.target = self
         menu.addItem(settingsItem)
@@ -99,6 +103,10 @@ final class StatusBarController: NSObject {
 
     @objc private func openSettings() {
         appDelegate?.openSettings()
+    }
+
+    @objc private func checkForUpdates() {
+        appDelegate?.checkForUpdates()
     }
 
     @objc private func quit() {
