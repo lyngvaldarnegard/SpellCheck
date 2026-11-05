@@ -207,7 +207,7 @@ extension PromptPickerWindowController: NSTableViewDataSource, NSTableViewDelega
 
     func tableView(_ tableView: NSTableView, shouldSelectRow row: Int) -> Bool {
         selectedIndex = row
-        true
+        return true
     }
 }
 
