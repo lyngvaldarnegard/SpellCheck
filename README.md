@@ -101,11 +101,16 @@ framework can no longer ship silently. If the app still won't start:
 
 ### macOS keeps asking for Accessibility permission
 
-Bundles are now always code-signed as a whole (Info.plist bound into the
-signature). Without a Developer ID certificate the build is **ad-hoc signed**,
-which yields a *new* identity on every build — macOS then treats each build as
-a different app and may re-prompt. After installing a new build, remove and
-re-add SpellCheck under System Settings → Privacy & Security → Accessibility.
+Bundles are always code-signed as a whole (Info.plist bound into the
+signature). Without a Developer ID certificate the build is **ad-hoc signed
+without the hardened runtime** — hardened runtime + ad-hoc would turn on
+library validation and make macOS abort the launch with
+`dyld: ... different Team IDs` (embedded frameworks like Sparkle ship
+pre-signed by their own team). CI rejects that combination and smoke-launches
+the packaged app from the shipped zip on every build, so a launch-breaking
+release can no longer slip through. Ad-hoc signing still yields a *new*
+identity on every build — after installing a new build, remove and re-add
+SpellCheck under System Settings → Privacy & Security → Accessibility.
 The permanent fix is a Developer ID Application certificate (Apple Developer
 Program membership required): set it as the `SIGNING_IDENTITY` secret and the
 identity stays stable across updates.

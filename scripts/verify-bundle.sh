@@ -105,6 +105,8 @@ done
 # signature). "adhoc, linker-signed" with an unbound Info.plist makes TCC
 # treat every build as a new app.
 codesign_info="$(codesign -dv "$APP_DIR" 2>&1 || true)"
+app_flags="$(echo "$codesign_info" | sed -n 's/.*flags=[^ ]*(\([^)]*\)).*/\1/p' | head -1)"
+app_team="$(echo "$codesign_info" | sed -n 's/^TeamIdentifier=//p' | head -1)"
 if echo "$codesign_info" | grep -q "Signature=adhoc"; then
     ok "bundle is code-signed (adhoc)"
 elif echo "$codesign_info" | grep -q "Signature="; then
@@ -114,6 +116,37 @@ else
 fi
 if ! codesign --verify "$APP_DIR" >/dev/null 2>&1; then
     bad "bundle signature does not verify (codesign --verify failed)"
+fi
+
+# Library-validation safety: a hardened-runtime (flags contain "runtime")
+# main executable turns on library validation — every loaded library must
+# then be signed by the SAME team. Sparkle and other embedded frameworks
+# ship pre-signed by their own Developer ID teams, so an ad-hoc hardened
+# build aborts at launch with "dyld: ... different Team IDs". Reject that
+# combination outright instead of shipping an app that cannot start.
+if echo "$app_flags" | grep -qw runtime; then
+    ok "hardened runtime is enabled"
+    if [ -z "$app_team" ]; then
+        bad "ad-hoc signature + hardened runtime = library validation will reject embedded frameworks at launch (dyld: different Team IDs). Either sign with a Developer ID identity or drop --options runtime for ad-hoc builds."
+    fi
+fi
+
+# Every embedded framework must be signed, and with the same team as the
+# app when the app has a team (mixed teams are fine without library
+# validation, but consistency is what TCC and updates want).
+if [ -d "$APP_DIR/Contents/Frameworks" ]; then
+    for fw in "$APP_DIR/Contents/Frameworks"/*.framework; do
+        [ -e "$fw" ] || continue
+        fw_info="$(codesign -dv "$fw" 2>&1 || true)"
+        fw_team="$(echo "$fw_info" | sed -n 's/^TeamIdentifier=//p' | head -1)"
+        if ! echo "$fw_info" | grep -q "Signature="; then
+            bad "$fw is NOT code-signed"
+        elif [ -n "$app_team" ] && [ "$fw_team" != "$app_team" ]; then
+            bad "$fw team ($fw_team) differs from the app team ($app_team)"
+        else
+            ok "$(basename "$fw") signed (team: ${fw_team:-adhoc})"
+        fi
+    done
 fi
 
 if [ "$fail" -ne 0 ]; then

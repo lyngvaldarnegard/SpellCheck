@@ -40,6 +40,24 @@ jobs:
       - name: Verify app bundle is self-contained (no missing frameworks)
         run: scripts/verify-bundle.sh build/SpellCheck.app
 
+      - name: Verify the SHIPPED zip (extract + signature checks + launch smoke test)
+        run: |
+          rm -rf /tmp/shipped && mkdir -p /tmp/shipped
+          ditto -x -k build/SpellCheck-macOS.zip /tmp/shipped
+          scripts/verify-bundle.sh /tmp/shipped/SpellCheck.app
+          EXE="/tmp/shipped/SpellCheck.app/Contents/MacOS/SpellCheck"
+          "$EXE" > /tmp/shipped-launch.log 2>&1 &
+          APP_PID=$!
+          sleep 8
+          if kill -0 "$APP_PID" 2>/dev/null; then
+            echo "Launch smoke test OK: app survived 8s (all frameworks loaded, no dyld abort)"
+            kill "$APP_PID" 2>/dev/null || true
+          else
+            echo "LAUNCH SMOKE TEST FAILED - app exited during startup:" >&2
+            cat /tmp/shipped-launch.log >&2
+            exit 1
+          fi
+
       - name: Notarize (optional, needs Apple Developer notarization keys)
         if: env.NOTARY_API_KEY != ''
         env:
