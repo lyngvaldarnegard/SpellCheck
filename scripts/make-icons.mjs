@@ -90,43 +90,38 @@ function parsePath(d) {
   return subpaths;
 }
 
-// ---------- rasterizer: nonzero winding scanline fill, supersampled ----------
+// ---------- rasterizer: supersampled distance-field checkmark ----------
+// Checkmark polyline on a 24-unit grid, thick round-capped stroke.
+const CHECK = [[5.2, 12.6], [10.4, 17.8], [18.8, 7.4]];
+const STROKE = 3.1;
+
+function distToSeg(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay;
+  const l2 = dx * dx + dy * dy;
+  let t = l2 === 0 ? 0 : ((px - ax) * dx + (py - ay) * dy) / l2;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+
 function renderGlyph(size, color, supersample = 4) {
   const S = size * supersample;
-  const subpaths = parsePath(PATH_D).map(sp => sp.map(([px, py]) => [(px / 24) * S, (py / 24) * S]));
+  const pts = CHECK.map(([x, y]) => [(x / 24) * S, (y / 24) * S]);
+  const half = (STROKE / 24) * S / 2;
   const rgba = Buffer.alloc(S * S * 4);
-  const edges = [];
-  for (const sp of subpaths) {
-    for (let i = 0; i < sp.length - 1; i++) {
-      const [x1, y1] = sp[i], [x2, y2] = sp[i + 1];
-      if (y1 !== y2) edges.push([x1, y1, x2, y2, Math.sign(y2 - y1)]);
-    }
-  }
   for (let y = 0; y < S; y++) {
-    const yc = y + 0.5;
-    const xs = [];
-    for (const [x1, y1, x2, y2, dir] of edges) {
-      if ((y1 <= yc && y2 > yc) || (y2 <= yc && y1 > yc)) {
-        xs.push([x1 + ((yc - y1) / (y2 - y1)) * (x2 - x1), dir]);
+    for (let x = 0; x < S; x++) {
+      const px = x + 0.5, py = y + 0.5;
+      let d = Infinity;
+      for (let i = 0; i < pts.length - 1; i++) {
+        d = Math.min(d, distToSeg(px, py, pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]));
       }
-    }
-    xs.sort((a, b) => a[0] - b[0]);
-    let winding = 0;
-    let start = 0;
-    for (const [x, dir] of xs) {
-      const prev = winding;
-      winding += dir;
-      if (prev === 0 && winding !== 0) start = x;
-      else if (prev !== 0 && winding === 0) {
-        const x0 = Math.max(0, Math.floor(start)), x1 = Math.min(S - 1, Math.ceil(x));
-        for (let px = x0; px <= x1; px++) {
-          const o = (y * S + px) * 4;
-          rgba[o] = color[0]; rgba[o + 1] = color[1]; rgba[o + 2] = color[2]; rgba[o + 3] = 255;
-        }
-      }
+      const alpha = Math.max(0, Math.min(1, half + 0.75 - d));
+      if (alpha <= 0) continue;
+      const o = (y * S + x) * 4;
+      rgba[o] = color[0]; rgba[o + 1] = color[1]; rgba[o + 2] = color[2];
+      rgba[o + 3] = Math.round(alpha * 255);
     }
   }
-  // downsample
   const out = Buffer.alloc(size * size * 4);
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
@@ -149,7 +144,7 @@ function renderAppIcon(size) {
   const SS = 4, S = size * SS;
   const rgba = Buffer.alloc(S * S * 4);
   const radius = 0.2267 * S;
-  const cTop = [99, 102, 241], cBottom = [124, 58, 237]; // indigo-500 -> violet-600
+  const cTop = [94, 177, 255], cBottom = [122, 90, 248]; // #5EB1FF -> #7A5AF8
   for (let y = 0; y < S; y++) {
     for (let x = 0; x < S; x++) {
       // rounded rect mask (supersampled coverage via distance check at 2x2 subsamples)
@@ -162,7 +157,7 @@ function renderAppIcon(size) {
         if (d <= radius) cov++;
       }
       if (cov === 0) continue;
-      const t = y / S;
+      const t = (x + y) / (2 * S);
       const o = (y * S + x) * 4;
       rgba[o] = cTop[0] + (cBottom[0] - cTop[0]) * t;
       rgba[o + 1] = cTop[1] + (cBottom[1] - cTop[1]) * t;
