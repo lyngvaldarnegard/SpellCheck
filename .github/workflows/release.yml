@@ -37,7 +37,7 @@ jobs:
           SIGNING_IDENTITY: ${{ secrets.SIGNING_IDENTITY }}
 
       - name: Sign update with Sparkle key (optional)
-        if: ${{ secrets.SPARKLE_PRIVATE_KEY != '' }}
+        if: env.SPARKLE_PRIVATE_KEY != ''
         env:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: |

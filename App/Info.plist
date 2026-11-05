@@ -16,6 +16,8 @@
 	<string>APPL</string>
 	<key>LSUIElement</key>
 	<true/>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon.icns</string>
 	<key>NSAccessibilityUsageDescription</key>
 	<string>SpellCheck needs Accessibility access to read the selected text in other apps and to insert corrections.</string>
 	<key>SUEnableAutomaticChecks</key>

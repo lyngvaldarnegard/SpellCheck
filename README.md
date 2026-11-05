@@ -11,6 +11,9 @@ you were using.
   the frontmost application via the Accessibility API and pastes the corrected
   text back over it.
 - **Global hot key** — default ⌥⌘K, configurable in Settings.
+- **Proper icons** — a spellcheck glyph in the menu bar (template image, so it
+  follows light/dark mode like FixKey's) and a full app icon (`AppIcon.icns`)
+  shown in the Dock, Finder and Applications folder.
 - **Two backends**
   - *Offline (rule-based)* — fixes common misspellings, doubled words, doubled
     letters, missing spaces after punctuation, and capitalization. No account

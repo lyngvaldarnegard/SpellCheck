@@ -15,7 +15,13 @@ final class StatusBarController: NSObject {
         self.settings = settings
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         super.init()
-        statusItem.button?.title = "⌨"
+        if let path = Bundle.main.path(forResource: "MenuBarIconTemplate", ofType: "png"),
+           let image = NSImage(contentsOfFile: path) {
+            image.isTemplate = true
+            statusItem.button?.image = image
+        } else {
+            statusItem.button?.title = "⌨"
+        }
         statusItem.button?.target = self
         statusItem.button?.action = #selector(toggleMenu(_:))
         buildMenu()
@@ -24,24 +30,33 @@ final class StatusBarController: NSObject {
     func handle(_ event: EngineEvent) {
         switch event {
         case .idle:
-            statusItem.button?.title = "⌨"
+            setFallbackTitle("⌨")
+            statusItem.button?.toolTip = nil
         case .working(let message):
-            statusItem.button?.title = "⏳"
+            setFallbackTitle("⏳")
             statusItem.button?.toolTip = message
         case .succeeded:
-            statusItem.button?.title = "✓"
-            statusItem.button?.toolTip = nil
+            setFallbackTitle("✓")
+            statusItem.button?.toolTip = "Done"
             flash(title: "✓")
         case .failed(let message):
-            statusItem.button?.title = "✗"
+            setFallbackTitle("✗")
             statusItem.button?.toolTip = message
             flash(title: "✗")
         }
     }
 
+    /// When a template image is installed the title is not rendered, so only
+    /// set it as a fallback (e.g. running from `swift run` without resources).
+    private func setFallbackTitle(_ title: String) {
+        if statusItem.button?.image == nil {
+            statusItem.button?.title = title
+        }
+    }
+
     private func flash(title: String) {
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-            guard let self, self.statusItem.button?.title == title else { return }
+            guard let self, self.statusItem.button?.image == nil, self.statusItem.button?.title == title else { return }
             self.statusItem.button?.title = "⌨"
             self.statusItem.button?.toolTip = nil
         }

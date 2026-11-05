@@ -22,8 +22,13 @@ cp "$BIN_DIR/SpellCheck" "$APP_DIR/Contents/MacOS/SpellCheck"
 cp "$ROOT/App/Info.plist" "$APP_DIR/Contents/Info.plist"
 printf 'APPL????' > "$APP_DIR/Contents/PkgInfo"
 
-if [ -f "$ROOT/App/Resources/AppIcon.icns" ]; then
-    cp "$ROOT/App/Resources/AppIcon.icns" "$APP_DIR/Contents/Resources/AppIcon.icns"
+if [ -d "$ROOT/App/Resources/AppIcon.iconset" ]; then
+    iconutil -c icns "$ROOT/App/Resources/AppIcon.iconset" -o "$APP_DIR/Contents/Resources/AppIcon.icns"
+fi
+
+if [ -f "$ROOT/App/Resources/MenuBarIconTemplate.png" ]; then
+    cp "$ROOT/App/Resources/MenuBarIconTemplate.png" "$APP_DIR/Contents/Resources/"
+    cp "$ROOT/App/Resources/MenuBarIconTemplate@2x.png" "$APP_DIR/Contents/Resources/" 2>/dev/null || true
 fi
 
 if [ -n "${SIGNING_IDENTITY:-}" ]; then
