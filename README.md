@@ -109,6 +109,11 @@ workflow regenerates it for every release and signs the zip when the
 3. Add the **private** key as the GitHub repo secret `SPARKLE_PRIVATE_KEY`.
 4. For reliable update installs, also code-sign releases: set the
    `SIGNING_IDENTITY` secret to your `Developer ID Application: …` identity.
+   To also remove the Gatekeeper "not from an identified developer" warning,
+   add notarization: create an App Store Connect API key with the *Developer
+   ID* role and set the secrets `NOTARY_API_KEY` (base64 .p8),
+   `NOTARY_API_KEY_ID` and `NOTARY_ISSUER_ID` — the release workflow then
+   notarizes and staples the app automatically.
 5. Publish a release — either push a tag (`git tag v0.1.0 && git push origin
    v0.1.0`) or, if push-triggered Actions are restricted in the repo, run it
    manually: **Actions → Release → Run workflow** (branch `main`, version

@@ -36,6 +36,21 @@ jobs:
         env:
           SIGNING_IDENTITY: ${{ secrets.SIGNING_IDENTITY }}
 
+      - name: Notarize (optional, needs Apple Developer notarization keys)
+        if: env.NOTARY_API_KEY != ''
+        env:
+          NOTARY_API_KEY: ${{ secrets.NOTARY_API_KEY }}
+          NOTARY_API_KEY_ID: ${{ secrets.NOTARY_API_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+        run: |
+          echo "$NOTARY_API_KEY" | base64 -d > /tmp/notary-key.p8
+          xcrun notarytool store-credentials spellcheck-notary \
+            --key /tmp/notary-key.p8 --key-id "$NOTARY_API_KEY_ID" --issuer "$NOTARY_ISSUER_ID"
+          xcrun notarytool submit build/SpellCheck-macOS.zip --keychain-profile spellcheck-notary --wait
+          xcrun stapler staple build/SpellCheck.app
+          rm -f build/SpellCheck-macOS.zip
+          ditto -c -k --keepParent build/SpellCheck.app build/SpellCheck-macOS.zip
+
       - name: Sign update with Sparkle key (optional)
         if: env.SPARKLE_PRIVATE_KEY != ''
         env:
