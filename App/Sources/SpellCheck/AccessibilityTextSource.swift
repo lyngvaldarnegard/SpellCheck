@@ -154,6 +154,10 @@ final class AccessibilityTextSource: TextSource, @unchecked Sendable {
         return (names as NSArray).contains(key)
     }
 
+    private static func sameRange(_ a: CFRange, _ b: CFRange) -> Bool {
+        a.location == b.location && a.length == b.length
+    }
+
     private func selectedTextRange(of element: AXUIElement) -> CFRange? {
         guard let rangeValue = copyAttribute(kAXSelectedTextRangeAttribute, from: element, as: AXValue.self) else { return nil }
         return cfRange(of: rangeValue)
@@ -226,7 +230,7 @@ final class AccessibilityTextSource: TextSource, @unchecked Sendable {
         if let range = target.documentRange {
             // The app hides the selected text but exposes the range: the range
             // must be unchanged, or re-selectable to the captured one.
-            if let currentRange = selectedTextRange(of: element), currentRange == range {
+            if let currentRange = selectedTextRange(of: element), Self.sameRange(currentRange, range) {
                 return
             }
             if reselect(range, in: element),
@@ -234,7 +238,7 @@ final class AccessibilityTextSource: TextSource, @unchecked Sendable {
                reread == target.originalText {
                 return
             }
-            if reselect(range, in: element), selectedTextRange(of: element) == range {
+            if reselect(range, in: element), selectedTextRange(of: element).map({ Self.sameRange($0, range) }) == true {
                 return
             }
             throw TextSourceError.selectionChanged(target.appName)
