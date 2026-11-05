@@ -5,9 +5,22 @@ import SpellCheckEngine
 
 nonisolated(unsafe) private let axPromptKey = "AXTrustedCheckOptionPrompt"
 
+/// Everything captured about the edit target before any focus change: the
+/// app (pid + name), the AX text element, the exact original text and —
+/// when the app exposes it — the selection range in the document.
+private struct CapturedTarget {
+    let pid: pid_t
+    let appName: String
+    let element: AXUIElement
+    let originalText: String
+    /// UTF-16 range of the grabbed text inside the element's full AXValue,
+    /// when the grab came from the document value layer.
+    var documentRange: CFRange?
+}
+
 /// Grabs the current selection — or, when nothing is selected, the sentence
 /// around the caret — from the frontmost application through the Accessibility
-/// API, and writes the edited text back over the same range.
+/// API, and writes the edited text back over the same selection.
 ///
 /// Not every editor exposes the same AX attributes, so grabbing works in
 /// layers:
@@ -20,10 +33,14 @@ nonisolated(unsafe) private let axPromptKey = "AXTrustedCheckOptionPrompt"
 ///   4. a clipboard fallback (posts ⌘C, reads the selection, restores the
 ///      previous clipboard) for editors that expose no usable AX text at all.
 ///
-/// The application the text was grabbed from is captured up front and
-/// re-activated before anything is written, so the result never lands in a
-/// different app or over a different selection. Replacement is verified via
-/// readback whenever the app allows it.
+/// Replacement is clipboard-based (FixKey-style): the corrected text is placed
+/// on the pasteboard and pasted over the still-intact selection with ⌘V, so
+/// the edit is a normal undoable operation in the target app. Before pasting,
+/// the target app is re-activated and the selection is verified to still be
+/// the captured one; after pasting, the document is read back when possible.
+/// The paste is issued AT MOST ONCE — a failed verification never triggers a
+/// second replacement, because the first one may already have changed the
+/// document. The corrected text intentionally stays on the clipboard.
 final class AccessibilityTextSource: TextSource, @unchecked Sendable {
 
     func grab() async throws -> GrabbedText {
@@ -47,11 +64,19 @@ final class AccessibilityTextSource: TextSource, @unchecked Sendable {
         if let editor = findEditorElement(root: focused, key: kAXSelectedTextAttribute),
            let selected = copyAttribute(kAXSelectedTextAttribute, from: editor, as: String.self),
            !selected.isEmpty {
-            let range = selectedTextRange(of: editor)
-            nonisolated(unsafe) let capturedEditor = editor
+            var target = CapturedTarget(
+                pid: pid,
+                appName: appName,
+                element: editor,
+                originalText: selected,
+                documentRange: nil
+            )
+            target.documentRange = selectedTextRange(of: editor)
+            nonisolated(unsafe) let captured = target
             return GrabbedText(scope: .selection(selected)) { [weak self] newText in
-                guard let self else { throw TextSourceError.replaceFailed }
-                try await self.replaceViaSelectedText(newText, in: capturedEditor, range: range, pid: pid, appName: appName)
+                try await self?.replace(newText, target: captured)
+            } refocus: { [weak self] in
+                await self?.reactivate(pid: pid, appName: appName)
             }
         }
 
@@ -60,18 +85,25 @@ final class AccessibilityTextSource: TextSource, @unchecked Sendable {
            let document = copyAttribute(kAXValueAttribute, from: editor, as: String.self),
            !document.isEmpty,
            let range = selectedTextRange(of: editor) {
-            nonisolated(unsafe) let capturedEditor = editor
             if range.length > 0, let selected = substring(of: document, range: range), !selected.isEmpty {
+                var target = CapturedTarget(pid: pid, appName: appName, element: editor, originalText: selected)
+                target.documentRange = range
+                nonisolated(unsafe) let captured = target
                 return GrabbedText(scope: .selection(selected)) { [weak self] newText in
-                    guard let self else { throw TextSourceError.replaceFailed }
-                    try await self.replaceViaRange(newText, in: capturedEditor, location: range.location, length: range.length, pid: pid, appName: appName)
+                    try await self?.replace(newText, target: captured)
+                } refocus: { [weak self] in
+                    await self?.reactivate(pid: pid, appName: appName)
                 }
             }
             let caret = range.location + range.length
             if let extraction = TextScopeExtractor.sentence(in: document, caretOffset: caret) {
+                var target = CapturedTarget(pid: pid, appName: appName, element: editor, originalText: extraction.text)
+                target.documentRange = CFRange(location: extraction.utf16Location, length: extraction.utf16Length)
+                nonisolated(unsafe) let captured = target
                 return GrabbedText(scope: .sentence(extraction.text)) { [weak self] newText in
-                    guard let self else { throw TextSourceError.replaceFailed }
-                    try await self.replaceViaRange(newText, in: capturedEditor, location: extraction.utf16Location, length: extraction.utf16Length, pid: pid, appName: appName)
+                    try await self?.replace(newText, target: captured)
+                } refocus: { [weak self] in
+                    await self?.reactivate(pid: pid, appName: appName)
                 }
             }
         }
@@ -79,9 +111,12 @@ final class AccessibilityTextSource: TextSource, @unchecked Sendable {
         // Layer 4: clipboard fallback — the selection is copied with ⌘C and
         // the replacement is pasted over the (still intact) selection.
         if let copied = try await copySelectionViaClipboard(pid: pid, appName: appName) {
+            let target = CapturedTarget(pid: pid, appName: appName, element: focused, originalText: copied)
+            nonisolated(unsafe) let captured = target
             return GrabbedText(scope: .selection(copied)) { [weak self] newText in
-                guard let self else { throw TextSourceError.replaceFailed }
-                try await self.replaceViaClipboard(newText, pid: pid, appName: appName)
+                try await self?.replace(newText, target: captured)
+            } refocus: { [weak self] in
+                await self?.reactivate(pid: pid, appName: appName)
             }
         }
 
@@ -137,88 +172,166 @@ final class AccessibilityTextSource: TextSource, @unchecked Sendable {
     /// selection and restores the clipboard. Returns nil when nothing was
     /// selected.
     private func copySelectionViaClipboard(pid: pid_t, appName: String) async throws -> String? {
-        guard await reactivateTarget(pid: pid, appName: appName) else {
+        guard await reactivate(pid: pid, appName: appName) else {
             throw TextSourceError.targetUnavailable(appName)
         }
         let saved = snapshotPasteboard()
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         postKeyboardShortcut(modifiers: .maskCommand, virtualKey: 0x08 /* C */)
-        try await Task.sleep(nanoseconds: 200_000_000)
+        try await Task.sleep(nanoseconds: 250_000_000)
         let copied = pasteboard.string(forType: .string)
         restorePasteboard(saved)
         guard let copied, !copied.isEmpty else { return nil }
         return copied
     }
 
-    // MARK: Replacement strategies
+    // MARK: Replacement
 
-    /// Replaces by setting the AX selected text directly (optionally after
-    /// re-selecting a known range). Works in apps that accept writes to
-    /// `kAXSelectedTextAttribute`.
-    private func replaceViaSelectedText(_ newText: String, in element: AXUIElement, range: CFRange?, pid: pid_t, appName: String) async throws {
-        try await prepareTargetForReplacement(pid: pid, appName: appName)
-        if let range {
-            var cfRange = range
-            if let rangeValue = AXValueCreate(.cfRange, &cfRange) {
-                _ = AXUIElementSetAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, rangeValue)
-            }
+    /// Replaces the captured selection with `newText`:
+    ///   1. re-activates the original app,
+    ///   2. verifies the captured selection is still intact (re-selecting the
+    ///      captured range when the app allows it) — aborts otherwise,
+    ///   3. pastes ONCE over the selection,
+    ///   4. verifies the document readback when the app exposes AXValue.
+    private func replace(_ newText: String, target: CapturedTarget) async throws {
+        nonisolated(unsafe) let target = target
+        guard await reactivate(pid: target.pid, appName: target.appName) else {
+            throw TextSourceError.targetUnavailable(target.appName)
         }
-        let value: CFTypeRef = newText as NSString
-        guard AXUIElementSetAttributeValue(element, kAXSelectedTextAttribute as CFString, value) == .success else {
-            throw TextSourceError.replaceFailed
-        }
-        if let readBack = copyAttribute(kAXSelectedTextAttribute, from: element, as: String.self), readBack != newText {
-            throw TextSourceError.replaceFailed
-        }
+        try await ensureSelectionIntact(target)
+        let documentBefore = copyAttribute(kAXValueAttribute, from: target.element, as: String.self)
+        try await pasteOnce(newText, appName: target.appName)
+        try await verify(target, newText: newText, documentBefore: documentBefore)
     }
 
-    /// Replaces a UTF-16 range: selects it, then writes the selected text.
-    /// Falls back to a clipboard paste when the app does not accept direct
-    /// writes.
-    private func replaceViaRange(_ newText: String, in element: AXUIElement, location: Int, length: Int, pid: pid_t, appName: String) async throws {
-        try await prepareTargetForReplacement(pid: pid, appName: appName)
-        var cfRange = CFRange(location: location, length: length)
-        guard let rangeValue = AXValueCreate(.cfRange, &cfRange),
-              AXUIElementSetAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, rangeValue) == .success else {
-            throw TextSourceError.replaceFailed
-        }
-        let value: CFTypeRef = newText as NSString
-        if AXUIElementSetAttributeValue(element, kAXSelectedTextAttribute as CFString, value) == .success {
-            if let readBack = copyAttribute(kAXSelectedTextAttribute, from: element, as: String.self), readBack != newText {
-                throw TextSourceError.replaceFailed
+    /// Confirms the target's selection is still the captured text before
+    /// anything is written. When the app exposes the selection range but not
+    /// the selected text, the captured range is re-selected; when neither is
+    /// readable, the currently focused element must still be the captured one.
+    private func ensureSelectionIntact(_ target: CapturedTarget) async throws {
+        nonisolated(unsafe) let target = target
+        let element = target.element
+
+        if let current = copyAttribute(kAXSelectedTextAttribute, from: element, as: String.self) {
+            if current == target.originalText { return }
+            if let range = target.documentRange, reselect(range, in: element),
+               let reread = copyAttribute(kAXSelectedTextAttribute, from: element, as: String.self),
+               reread == target.originalText {
+                return
             }
+            throw TextSourceError.selectionChanged(target.appName)
+        }
+
+        if let range = target.documentRange {
+            // The app hides the selected text but exposes the range: the range
+            // must be unchanged, or re-selectable to the captured one.
+            if let currentRange = selectedTextRange(of: element), currentRange == range {
+                return
+            }
+            if reselect(range, in: element),
+               let reread = copyAttribute(kAXSelectedTextAttribute, from: element, as: String.self),
+               reread == target.originalText {
+                return
+            }
+            if reselect(range, in: element), selectedTextRange(of: element) == range {
+                return
+            }
+            throw TextSourceError.selectionChanged(target.appName)
+        }
+
+        // No selection info at all (e.g. Electron web areas): only paste when
+        // the app is still focused on the captured element.
+        let systemWide = AXUIElementCreateSystemWide()
+        if let focusedApp = copyAttribute(kAXFocusedApplicationAttribute, from: systemWide, as: AXUIElement.self),
+           let focused = copyAttribute(kAXFocusedUIElementAttribute, from: focusedApp, as: AXUIElement.self),
+           CFEqual(focused, element) {
             return
         }
-        // The app ignores direct AX writes — paste over the selected range and
-        // verify via readback when possible.
-        try await pasteViaClipboard(newText)
-        if let document = copyAttribute(kAXValueAttribute, from: element, as: String.self) {
-            guard let updated = substring(of: document, range: CFRange(location: location, length: newText.utf16.count)),
-                  updated == newText else {
-                throw TextSourceError.replaceFailed
-            }
-        }
-        // No readback available: the range was selected and the paste was
-        // posted over it.
+        throw TextSourceError.selectionChanged(target.appName)
     }
 
-    /// Replaces the current (unknown) selection by pasting over it.
-    private func replaceViaClipboard(_ newText: String, pid: pid_t, appName: String) async throws {
-        try await prepareTargetForReplacement(pid: pid, appName: appName)
-        try await pasteViaClipboard(newText)
+    @discardableResult
+    private func reselect(_ range: CFRange, in element: AXUIElement) -> Bool {
+        var cfRange = range
+        guard let rangeValue = AXValueCreate(.cfRange, &cfRange) else { return false }
+        return AXUIElementSetAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, rangeValue) == .success
+    }
+
+    /// Places `text` on the clipboard and posts ⌘V exactly once. The user's
+    /// previous clipboard is restored only when the paste could not be issued
+    /// at all; once the keystroke is posted the corrected text intentionally
+    /// stays on the clipboard.
+    private func pasteOnce(_ text: String, appName: String) async throws {
+        let pasteboard = NSPasteboard.general
+        let saved = snapshotPasteboard()
+        pasteboard.clearContents()
+        guard pasteboard.setString(text, forType: .string) else {
+            restorePasteboard(saved)
+            throw TextSourceError.replaceFailed
+        }
+        guard postKeyboardShortcut(modifiers: .maskCommand, virtualKey: 0x09 /* V */) else {
+            restorePasteboard(saved)
+            throw TextSourceError.replaceFailed
+        }
+        // The keystroke was sent — never restore the old clipboard now, the
+        // corrected text is the useful thing to keep.
+        try await Task.sleep(nanoseconds: 300_000_000)
+    }
+
+    /// Reads the document back after the paste. A matching document confirms
+    /// success; an unchanged document means nothing happened; anything else
+    /// is reported as an unverified (possibly partial) change. Never retries.
+    private func verify(_ target: CapturedTarget, newText: String, documentBefore: String?) async throws {
+        nonisolated(unsafe) let target = target
+        guard let before = documentBefore else {
+            // No document readback available — do not claim success.
+            throw TextSourceError.unverified(target.appName)
+        }
+        var after = before
+        for _ in 0..<8 {
+            try await Task.sleep(nanoseconds: 150_000_000)
+            if let value = copyAttribute(kAXValueAttribute, from: target.element, as: String.self) {
+                after = value
+                if after != before { break }
+            } else {
+                throw TextSourceError.unverified(target.appName)
+            }
+        }
+        if after == before {
+            // The paste did not land anywhere: nothing was changed.
+            throw TextSourceError.replaceFailed
+        }
+        if expectedDocument(before, original: target.originalText, newText: newText, range: target.documentRange) == after {
+            return
+        }
+        if after.contains(newText) {
+            return
+        }
+        throw TextSourceError.unverified(target.appName)
+    }
+
+    /// The document value expected after a successful replacement.
+    private func expectedDocument(_ before: String, original: String, newText: String, range: CFRange?) -> String? {
+        let utf16 = before.utf16
+        if let range, range.location >= 0, range.location + range.length <= utf16.count {
+            let start = utf16.index(utf16.startIndex, offsetBy: range.location)
+            let end = utf16.index(start, offsetBy: range.length)
+            var result = String(decoding: utf16[utf16.startIndex..<start], as: UTF16.self)
+            result += newText
+            result += String(decoding: utf16[end...], as: UTF16.self)
+            return result
+        }
+        if let lower = before.range(of: original) {
+            return before.replacingCharacters(in: lower, with: newText)
+        }
+        return nil
     }
 
     /// Brings the original application back to the front and waits for it to
     /// actually become frontmost, so the text is never written into a
     /// different app.
-    private func prepareTargetForReplacement(pid: pid_t, appName: String) async throws {
-        guard await reactivateTarget(pid: pid, appName: appName) else {
-            throw TextSourceError.targetUnavailable(appName)
-        }
-    }
-
-    private func reactivateTarget(pid: pid_t, appName: String) async -> Bool {
+    private func reactivate(pid: pid_t, appName: String) async -> Bool {
         guard pid != 0 else { return false }
         guard let app = NSRunningApplication(processIdentifier: pid), !app.isTerminated else { return false }
         let frontmost = await MainActor.run { NSWorkspace.shared.frontmostApplication?.processIdentifier }
@@ -230,20 +343,6 @@ final class AccessibilityTextSource: TextSource, @unchecked Sendable {
             if current == pid { return true }
         }
         return false
-    }
-
-    /// Saves the clipboard, pastes `text` with ⌘V, then restores the saved
-    /// clipboard so the user's clipboard is not clobbered.
-    private func pasteViaClipboard(_ text: String) async throws {
-        let saved = snapshotPasteboard()
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        guard pasteboard.setString(text, forType: .string) else {
-            throw TextSourceError.replaceFailed
-        }
-        postKeyboardShortcut(modifiers: .maskCommand, virtualKey: 0x09 /* V */)
-        try await Task.sleep(nanoseconds: 200_000_000)
-        restorePasteboard(saved)
     }
 
     private func snapshotPasteboard() -> [[(NSPasteboard.PasteboardType, Data)]] {
@@ -265,16 +364,18 @@ final class AccessibilityTextSource: TextSource, @unchecked Sendable {
         }
     }
 
-    private func postKeyboardShortcut(modifiers: CGEventFlags, virtualKey: CGKeyCode) {
+    @discardableResult
+    private func postKeyboardShortcut(modifiers: CGEventFlags, virtualKey: CGKeyCode) -> Bool {
         guard let source = CGEventSource(stateID: .hidSystemState),
               let keyDown = CGEvent(keyboardEventSource: source, virtualKey: virtualKey, keyDown: true),
               let keyUp = CGEvent(keyboardEventSource: source, virtualKey: virtualKey, keyDown: false) else {
-            return
+            return false
         }
         keyDown.flags = modifiers
         keyUp.flags = modifiers
         keyDown.post(tap: .cghidEventTap)
         keyUp.post(tap: .cghidEventTap)
+        return true
     }
 
     // MARK: AX plumbing

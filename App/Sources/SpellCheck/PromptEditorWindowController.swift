@@ -9,14 +9,14 @@ import SpellCheckCore
 @MainActor
 final class PromptEditorWindowController: NSWindowController {
 
-    private let save: @MainActor (AppSettings, [Prompt]) async throws -> Void
-    private var settings: AppSettings
+    private let save: @MainActor ([Prompt]) async throws -> Void
+    private var prompts: [Prompt]
     private let onPromptsChanged: ([Prompt]) -> Void
 
-    init(settings: AppSettings,
-         save: @escaping @MainActor (AppSettings, [Prompt]) async throws -> Void,
+    init(prompts: [Prompt],
+         save: @escaping @MainActor ([Prompt]) async throws -> Void,
          onPromptsChanged: @escaping ([Prompt]) -> Void) {
-        self.settings = settings
+        self.prompts = prompts
         self.save = save
         self.onPromptsChanged = onPromptsChanged
         let window = NSWindow(
@@ -36,19 +36,24 @@ final class PromptEditorWindowController: NSWindowController {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
-    var currentPrompts: [Prompt] { settings.prompts }
+    var currentPrompts: [Prompt] { prompts }
 
-    func reload(settings: AppSettings) {
-        self.settings = settings
+    /// Keeps the controller's prompt list in sync with the persisted list
+    /// (e.g. after a save from Settings).
+    func reload(prompts: [Prompt]) {
+        self.prompts = prompts
     }
 
     func persist(_ prompts: [Prompt]) async throws {
-        try await save(settings, prompts)
-        settings.prompts = prompts
+        try await save(prompts)
+        self.prompts = prompts
         onPromptsChanged(prompts)
     }
 
     override func showWindow(_ sender: Any?) {
+        // Rebuild the hosted view so the editor always shows the CURRENT
+        // persisted prompts, never a snapshot from an earlier open.
+        window?.contentView = NSHostingView(rootView: PromptEditorView(controller: self))
         super.showWindow(sender)
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)

@@ -105,6 +105,59 @@ struct SettingsTests {
         #expect(migrated.prompts.isEmpty)
     }
 
+    @Test func lossyPromptDecodingKeepsHealthyEntries() throws {
+        // One malformed prompt entry must not wipe the whole list.
+        let json = """
+        {
+          "apiKey": "sk-keep-me",
+          "prompts": [
+            {"id": "11111111-1111-1111-1111-111111111111", "name": "Allvit", "prompt": "Rettsnavn i fullt \u{2014} «skatteloven»", "icon": "pen"},
+            "not-a-prompt",
+            {"id": "22222222-2222-2222-2222-222222222222", "name": "Juss", "prompt": "Polish legal text", "icon": "question"},
+            {"bogus": true}
+          ]
+        }
+        """
+        let decoded = try JSONDecoder().decode(Settings.self, from: Data(json.utf8))
+        #expect(decoded.apiKey == "sk-keep-me")
+        #expect(decoded.prompts.map(\.name) == ["Allvit", "Juss"])
+        #expect(decoded.prompts[0].prompt.contains("«skatteloven»"))
+    }
+
+    @Test func promptsWithUnknownIconStillDecode() throws {
+        let json = """
+        {
+          "prompts": [
+            {"id": "33333333-3333-3333-3333-333333333333", "name": "Future icon", "prompt": "x", "icon": "some-future-glyph"},
+            {"id": "44444444-4444-4444-4444-444444444444", "name": "Missing icon", "prompt": "y"}
+          ]
+        }
+        """
+        let decoded = try JSONDecoder().decode(Settings.self, from: Data(json.utf8))
+        #expect(decoded.prompts.map(\.name) == ["Future icon", "Missing icon"])
+        #expect(decoded.prompts[0].iconKind == .check)
+    }
+
+    @Test func migratedSettingsKeepUserPromptsVerbatim() throws {
+        // A v0.2.x settings file with user prompts, re-loaded and migrated by a
+        // newer version: titles, full text and properties must be identical.
+        var existing = Settings.default
+        existing.apiKey = "sk-keep-me"
+        existing.didSeedDefaultPrompts = true
+        existing.prompts = [
+            Prompt(name: "Allvit", prompt: "Skriv retts- og lovnavn i fullt, «skatteloven» i stedet for «sktl.». Behold FSFIN forkortet. \u{00C6}\u{00F8}\u{00E5}", icon: PromptIcon.pen.rawValue),
+            Prompt(name: "Napoloen", prompt: "", icon: PromptIcon.sparkle.rawValue),
+        ]
+        let data = try JSONEncoder().encode(existing)
+        let decoded = try JSONDecoder().decode(Settings.self, from: data)
+        let migrated = decoded.migrated()
+        #expect(migrated.prompts == existing.prompts)
+        #expect(migrated.apiKey == "sk-keep-me")
+        #expect(migrated.didSeedDefaultPrompts)
+        let again = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(migrated)).migrated()
+        #expect(again == migrated)
+    }
+
     @Test func migrationSeedsOnlyOnce() {
         var settings = Settings.default
         settings.prompts = [Prompt(name: "Only mine", prompt: "x")]

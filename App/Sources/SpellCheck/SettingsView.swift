@@ -289,6 +289,12 @@ final class SettingsWindowController: NSWindowController {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
+    /// Keeps the snapshot shown in the window in sync with the persisted
+    /// settings (e.g. after a save from the Prompt Editor).
+    func reload(settings: AppSettings) {
+        self.initialSettings = settings
+    }
+
     func configureSave(_ save: @escaping @MainActor (AppSettings) async throws -> Void) {
         self.saveViaDelegate = save
     }
@@ -300,6 +306,9 @@ final class SettingsWindowController: NSWindowController {
     }
 
     override func showWindow(_ sender: Any?) {
+        // Rebuild the hosted view so Settings always shows the CURRENT
+        // persisted values, never a snapshot from an earlier open.
+        window?.contentView = NSHostingView(rootView: SettingsView(controller: self))
         super.showWindow(sender)
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)

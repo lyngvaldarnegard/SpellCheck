@@ -13,6 +13,15 @@ public actor SettingsStore {
            let decoded = try? JSONDecoder().decode(Settings.self, from: data) {
             self.cache = decoded
         } else {
+            // The existing file could not be decoded (corrupt or truncated
+            // after an update). Keep a timestamped backup next to it so the
+            // user's data — prompts included — is never silently destroyed,
+            // then start from defaults.
+            if FileManager.default.fileExists(atPath: url.path) {
+                let backup = url.deletingPathExtension()
+                    .appendingPathExtension("corrupt-\(Int(Date().timeIntervalSince1970)).json")
+                try? FileManager.default.moveItem(at: url, to: backup)
+            }
             self.cache = .default
         }
     }

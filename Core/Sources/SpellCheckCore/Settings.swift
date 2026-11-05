@@ -54,6 +54,18 @@ public struct Prompt: Codable, Equatable, Sendable, Identifiable {
         self.icon = icon
     }
 
+    /// Lenient decoding: missing keys fall back instead of failing, so one
+    /// older-shaped prompt entry can never break or wipe the list.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        name = try c.decodeIfPresent(String.self, forKey: .name) ?? ""
+        prompt = try c.decodeIfPresent(String.self, forKey: .prompt) ?? ""
+        icon = try c.decodeIfPresent(String.self, forKey: .icon) ?? PromptIcon.check.rawValue
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, name, prompt, icon }
+
     public var iconKind: PromptIcon { PromptIcon(rawValue: icon) ?? .check }
 }
 
@@ -100,11 +112,14 @@ public struct Settings: Codable, Equatable, Sendable {
         model = try c.decodeIfPresent(String.self, forKey: .model) ?? APIProvider.openAI.defaultModel
         baseURL = try c.decodeIfPresent(String.self, forKey: .baseURL) ?? APIProvider.openAI.baseURL
         let legacy = try decoder.container(keyedBy: LegacyCodingKeys.self)
-        if let prompts = try c.decodeIfPresent([Prompt].self, forKey: .prompts) {
-            self.prompts = prompts
-        } else if let legacyPrompts = try legacy.decodeIfPresent([LegacyPrompt].self, forKey: .customPrompts) {
+        if let prompts = (try? c.decodeIfPresent([LossyPrompt].self, forKey: .prompts)) ?? nil {
+            // Decode lossily: a single malformed or renamed prompt entry must
+            // never wipe the user's whole prompt list. Entries that carry no
+            // recognizable data at all are dropped.
+            self.prompts = prompts.compactMap(\.value).filter { !$0.name.isEmpty || !$0.prompt.isEmpty }
+        } else if let legacyPrompts = (try? legacy.decodeIfPresent([LossyLegacyPrompt].self, forKey: .customPrompts)) ?? nil {
             // v1 stored user prompts under "customPrompts" (name + prompt, no icon).
-            self.prompts = legacyPrompts.map { Prompt(name: $0.name, prompt: $0.prompt) }
+            self.prompts = legacyPrompts.compactMap(\.value).map { Prompt(name: $0.name, prompt: $0.prompt) }
         } else {
             self.prompts = []
         }
@@ -143,6 +158,23 @@ public struct Settings: Codable, Equatable, Sendable {
             next.didSeedDefaultPrompts = true
         }
         return next
+    }
+}
+
+/// Decodes a `Prompt`, yielding nil for entries that do not decode — one bad
+/// entry must not fail (and wipe) the entire list.
+private struct LossyPrompt: Decodable {
+    let value: Prompt?
+    init(from decoder: Decoder) throws {
+        self.value = try? Prompt(from: decoder)
+    }
+}
+
+/// Same lossy wrapper for v1 "customPrompts" entries.
+private struct LossyLegacyPrompt: Decodable {
+    let value: LegacyPrompt?
+    init(from decoder: Decoder) throws {
+        self.value = try? LegacyPrompt(from: decoder)
     }
 }
 

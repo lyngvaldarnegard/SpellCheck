@@ -181,7 +181,12 @@ function fit(contours, box) {
 
 // ---------- rasterizers ----------
 // Filled renderer: supersampled scanline fill (nonzero winding), then box downsample.
-function renderFilled(size, contours, color, supersample = 4) {
+function renderFilled(size, contourGroups, color, supersample = 4) {
+  const buffers = contourGroups.map((contours) => renderFilledGroup(size, contours, color, supersample));
+  return composite(size, buffers);
+}
+
+function renderFilledGroup(size, contours, color, supersample = 4) {
   const S = size * supersample;
   const segs = [];
   for (const c of contours) {
@@ -265,6 +270,19 @@ function downsample(hi, S, size, supersample) {
   return out;
 }
 
+function composite(size, buffers) {
+  const out = Buffer.alloc(size * size * 4);
+  for (const buf of buffers) {
+    for (let i = 0; i < out.length; i += 4) {
+      const a = buf[i + 3];
+      if (a > out[i + 3]) {
+        out[i] = buf[i]; out[i + 1] = buf[i + 1]; out[i + 2] = buf[i + 2]; out[i + 3] = a;
+      }
+    }
+  }
+  return out;
+}
+
 // composite a white glyph over the rounded-rect diagonal gradient (app icon)
 function renderAppIcon(size, glyphRGBA) {
   const SS = 4, S = size * SS;
@@ -313,22 +331,135 @@ function writePNG(path, size, rgba) {
 // ---------- glyph definitions (24-unit grid) ----------
 // Default: FixKey-style "Ω + checkmark" — MDI omega scaled into the letter slot
 // of the Material spellcheck icon, next to the original checkmark.
-const omegaFitted = fit(parsePath(OMEGA_D), { x: 1.9, y: 2.2, w: 11.4, h: 14.6 });
-const checkFitted = fit(parsePath(CHECK_D), { x: 12.6, y: 13.2, w: 9.4, h: 8.8 });
-const OMEGA_CHECK = omegaFitted.concat(checkFitted);
+// Ω at FULL size (the main symbol) with a smaller checkmark over its
+// lower-right side — the classic spellcheck composition. The check must not
+// shrink the Ω or obscure its recognizable shape.
+const omegaFitted = fit(parsePath(OMEGA_D), { x: 2, y: 2, w: 20, h: 20 });
+const checkFitted = fit(parsePath(CHECK_D), { x: 12.4, y: 13.2, w: 9.2, h: 8.6 });
+// Knockout: an enlarged check silhouette is cut OUT of the \u03a9 (reversed
+// contours under nonzero winding), then the check is drawn inside the gap.
+// Both symbols stay readable at menu-bar size.
+function reverseContour(c) { return c.slice().reverse(); }
+function scaleAbout(contours, cx, cy, k) {
+  return contours.map((c) => c.map(([x, y]) => [cx + (x - cx) * k, cy + (y - cy) * k]));
+}
+const checkBox = bbox(checkFitted);
+const checkCx = checkBox.minX + checkBox.w / 2;
+const checkCy = checkBox.minY + checkBox.h / 2;
+const checkGap = scaleAbout(checkFitted, checkCx, checkCy, 1.3);
+const OMEGA_CHECK = [
+  omegaFitted.concat(checkGap.map(reverseContour)),
+  checkFitted,
+];
 
 const GLYPHS = {
   'omega-check': { filled: OMEGA_CHECK },
-  omega: { filled: parsePath(OMEGA_D) },
-  spellcheck: { filled: parsePath(SPELLCHECK_D) },
+  omega: { filled: [parsePath(OMEGA_D)] },
+  spellcheck: { filled: [parsePath(SPELLCHECK_D)] },
   checkmark: { stroke: { points: CHECK, width: CHECK_STROKE } },
 };
 
 function renderGlyph(style, size, color) {
   const g = GLYPHS[style];
   if (!g) throw new Error('unknown style ' + style);
-  if (g.filled) return renderFilled(size, g.filled, color);
-  return renderStroke(size, g.stroke.points, g.stroke.width, color);
+  if (g.filled) return renderFilled(size, g.filled, color, 8);
+  return renderStroke(size, g.stroke.points, g.stroke.width, color, 8);
+}
+
+// ---------- vector emit: SVG source + template PDF ----------
+// The PDF is the asset the app actually ships: true vector geometry, so the
+// menu-bar glyph stays razor sharp on any Retina display (the old 22px PNG
+// was upscaled on Retina — that was the "low resolution" look). The SVG
+// files are the human-editable source artwork.
+const PDF_PT = 18; // menu-bar point size of the final image
+const PDF_SCALE = PDF_PT / 24;
+
+function fmt(n) { return (Math.round(n * 100) / 100).toString(); }
+
+function contoursToPathData(contours) {
+  let d = '';
+  for (const c of contours) {
+    if (!c.length) continue;
+    d += `M${fmt(c[0][0])} ${fmt(c[0][1])}`;
+    for (let i = 1; i < c.length; i++) d += `L${fmt(c[i][0])} ${fmt(c[i][1])}`;
+    d += 'Z';
+  }
+  return d;
+}
+
+function writeSVG(path, style) {
+  const g = GLYPHS[style];
+  let body = '';
+  if (g.filled) {
+    for (const group of g.filled) {
+      body += `  <path d="${contoursToPathData(group)}" fill="#000"/>\n`;
+    }
+  } else {
+    const pts = g.stroke.points.map(([x, y]) => `${fmt(x)} ${fmt(y)}`).join(' ');
+    body += `  <path d="M${pts}" fill="none" stroke="#000" stroke-width="${g.stroke.width}" stroke-linecap="round" stroke-linejoin="round"/>\n`;
+  }
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">\n${body}</svg>\n`;
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, svg);
+  console.log('wrote', path);
+}
+
+function pdfCoords([x, y]) {
+  // SVG y-down to PDF y-up, scaled into points.
+  return [x * PDF_SCALE, PDF_PT - y * PDF_SCALE];
+}
+
+function pdfContent(style) {
+  const g = GLYPHS[style];
+  let ops = '0 0 0 rg\n';
+  if (g.filled) {
+    for (const group of g.filled) {
+      for (const c of group) {
+        if (!c.length) continue;
+        const [x0, y0] = pdfCoords(c[0]);
+        ops += `${fmt(x0)} ${fmt(y0)} m\n`;
+        for (let i = 1; i < c.length; i++) {
+          const [x, y] = pdfCoords(c[i]);
+          ops += `${fmt(x)} ${fmt(y)} l\n`;
+        }
+        ops += 'h\n';
+      }
+      ops += 'f\n';
+    }
+  } else {
+    const w = g.stroke.width * PDF_SCALE;
+    ops += `1 J 1 j\n${fmt(w)} w\n`;
+    const pts = g.stroke.points.map(pdfCoords);
+    ops += `${fmt(pts[0][0])} ${fmt(pts[0][1])} m\n`;
+    for (let i = 1; i < pts.length; i++) {
+      ops += `${fmt(pts[i][0])} ${fmt(pts[i][1])} l\n`;
+    }
+    ops += 'S\n';
+  }
+  return ops;
+}
+
+function writePDF(path, style) {
+  const content = pdfContent(style);
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PDF_PT} ${PDF_PT}] /Resources << >> /Contents 4 0 R >>`,
+    `<< /Length ${content.length} >>\nstream\n${content}endstream`,
+  ];
+  let out = '%PDF-1.4\n';
+  const offsets = [];
+  objects.forEach((o, i) => {
+    offsets.push(out.length);
+    out += `${i + 1} 0 obj\n${o}\nendobj\n`;
+  });
+  const xref = out.length;
+  out += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const off of offsets) out += `${String(off).padStart(10, '0')} 00000 n \n`;
+  out += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, out, 'latin1');
+  console.log('wrote', path);
 }
 
 // ---------- emit ----------
@@ -339,8 +470,10 @@ const BLACK = [0, 0, 0];
 writePNG(join(ROOT, 'App/Resources/MenuBarIconTemplate.png'), 22, renderGlyph(DEFAULT_STYLE, 22, BLACK));
 writePNG(join(ROOT, 'App/Resources/MenuBarIconTemplate@2x.png'), 44, renderGlyph(DEFAULT_STYLE, 44, BLACK));
 
-// all selectable styles
+// all selectable styles: vector PDF (primary asset) + SVG source + PNG fallback
 for (const style of Object.keys(GLYPHS)) {
+  writePDF(join(ROOT, `App/Resources/MenuBarIcons/${style}.pdf`), style);
+  writeSVG(join(ROOT, `App/Resources/MenuBarIcons/svg/${style}.svg`), style);
   writePNG(join(ROOT, `App/Resources/MenuBarIcons/${style}.png`), 22, renderGlyph(style, 22, BLACK));
   writePNG(join(ROOT, `App/Resources/MenuBarIcons/${style}@2x.png`), 44, renderGlyph(style, 44, BLACK));
 }

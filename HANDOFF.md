@@ -1,10 +1,19 @@
 # SpellCheck — Project Handoff
 
-Last updated: 2026-11-05, after the **v2 refactor + v0.2.2** (prompt picker,
-API-only, editable prompts, signing/launch fix, Sparkle live, picker keyboard
-fix). Repo:
+Last updated: 2026-11-05, after the **v0.2.3 fixes** (picker keyboard focus,
+clipboard-based replacement with honest verification, prompt-persistence
+hardening, vector menu-bar icons). Repo:
 https://github.com/lyngvaldarnegard/SpellCheck (default branch `main`,
 **not protected** on purpose).
+
+**v0.2.2 user verdict (real Mac, ground truth over any green suite):** the
+picker appeared but **Enter reached the original text field** (replaced the
+selection with a line break — destructive). Clicking a prompt in **TextEdit**
+changed the text (removed the first part of a sentence, corrected the second)
+yet showed "Could not replace the text in the original app". Saved prompts
+were **lost across the update** (API key survived). The menu-bar icon looked
+**low-resolution**. All four are tracked in GitHub issues; do NOT close them
+until the user confirms the fixes on his Mac.
 
 ## 1. What this project is
 
@@ -44,10 +53,51 @@ original app, verifies the write) → status event (+ alert on failure).
 
 ## 3. Current state
 
-- Latest release: **v0.2.2** (universal, ad-hoc signed, Sparkle-signed update,
-  launch smoke-tested in CI). Release history this session: v0.2.0 (BROKEN —
-  ad-hoc + hardened runtime made dyld abort with "different Team IDs"; do not
-  install) → v0.2.1 (launch fixed) → v0.2.2 (picker keyboard fix + X button).
+- Latest release: **v0.2.3** (universal, ad-hoc signed, Sparkle-signed update).
+  Release history: v0.2.0 (BROKEN — ad-hoc + hardened runtime dyld abort) →
+  v0.2.1 (launch fixed) → v0.2.2 (picker X button + field-editor delegate —
+  **did NOT fix Enter reaching the original app**) → v0.2.3.
+- **v0.2.3 changes (this session):**
+  1. **Picker keyboard focus**: root cause of the v0.2.2 Enter bug — the
+     borderless panel never became the KEY window (borderless NSPanels refuse
+     key status), and SpellCheck never ACTIVATED itself, so keyboard input
+     went to the frontmost app. Fix: `PickerPanel` (NSPanel subclass,
+     `canBecomeKey == true`), `NSApp.activate(ignoringOtherApps: true)` +
+     `makeKeyAndOrderFront` + `makeFirstResponder(searchField)` in `show()`
+     (re-asserted next runloop tick), `hidesOnDeactivate = false`,
+     `collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]`.
+     Target app/text/selection are captured BEFORE the picker opens, so the
+     focus change cannot lose them; Escape/X now returns focus to the
+     original app via `GrabbedText.refocus`.
+  2. **Replacement**: rewritten FixKey-style. AX is used to CAPTURE and
+     VERIFY; the write itself is a clipboard paste (⌘V posted once) —
+     undoable, works in Notion/Electron. Before pasting: re-activate target,
+     verify the selection is still the captured one (read selected text /
+     range, re-select captured range if needed, else focused-element check)
+     — aborts with `selectionChanged` otherwise. After pasting: document
+     readback; exact match = success, unchanged = replaceFailed ("nothing
+     was changed"), other = `unverified` ("pasted but could not verify —
+     check the text; corrected text is on the clipboard"). **A paste is issued
+     at most once; a failed verification NEVER retries.** The corrected text
+     intentionally STAYS on the clipboard (user preference; old
+     save/restore-on-success behavior removed). The clipboard is only
+     restored when the paste could not be issued at all.
+  3. **Prompt persistence**: prompts decode lossily (one malformed entry
+     can't wipe the list; missing keys fall back instead of failing);
+     `Prompt.init(from:)` is lenient; SettingsStore backs up an undecodable
+     settings.json to `settings.corrupt-<ts>.json` instead of silently
+     defaulting; the Settings window never saves a stale prompt snapshot (it
+     always keeps the live list) and both Settings and Prompt Editor rebuild
+     their hosted views on open so they always show current data.
+  4. **Icons**: `scripts/make-icons.mjs` now emits true vector template PDFs
+     (18pt, `MenuBarIcons/<style>.pdf`) + SVG sources (`MenuBarIcons/svg/`)
+     + PNG fallbacks. Root cause of the blur: `NSImage(contentsOfFile:)`
+     loaded the 22px PNG and never picked the @2x variant. Ω+checkmark
+     redesigned: Ω at full size, smaller check knocked out of the Ω's
+     lower-right (transparent gap via reversed enlarged contour under
+     nonzero winding). `MenuBarIconStyle.templateImage` prefers the PDF.
+     **Visual check: only rendered previews were inspected programmatically
+     (ASCII/pixel diff) — NOT verified on a real Mac screen.**
 - The repo is now **public** and Sparkle is **live end-to-end**: the user
   generated an EdDSA key pair, the public key is embedded as `SUPublicEDKey`
   in `App/Info.plist`, the private key is the repo secret
@@ -56,8 +106,10 @@ original app, verifies the write) → status event (+ alert on failure).
   — the user should confirm this works when v0.2.2+ ships.
 - The user's v1 settings migrated in place (API key kept, ⌥⌘K → ⌥L, legacy
   customPrompts → prompts, defaults seeded once).
-- Tests: Core 48/48, Engine 27/27 (Linux), App tests + build + bundled
-  signature verification + launch smoke test on macos-15 CI.
+- Tests: Core 51/51, Engine 32/32 (Linux, this session). New App tests
+  (macos-15 CI): picker key-window status, first responder, Enter via
+  `panel.sendEvent`, Escape cancel, arrow/search behavior, icon template
+  assets. CI also builds + verifies the bundle + smoke-launches the app.
 - **Signing rules (hard-won, do not regress)**: ad-hoc builds must NOT use
   `--options runtime` — hardened runtime turns on library validation, which
   rejects Sparkle's Developer-ID-signed framework ("dyld: different Team
@@ -100,6 +152,11 @@ App sources are checked with `swiftc -parse App/Sources/SpellCheck/*.swift`.
 
 ## 6. Known issues / not-yet-done / user actions required
 
+The four v0.2.2 problems are tracked in GitHub issues (keep them OPEN until
+the user confirms on his Mac): the picker keyboard/focus bug, the
+capture/replacement + misleading-error bug, prompt persistence, and the icon
+resolution. See the repo's issue list.
+
 1. **Real-Mac verification of the whole workflow (STILL THE TOP PRIORITY)**:
    the user has v0.2.2 installed; he must confirm select-text-in-**Notion**
    and **TextEdit** → ⌥L → picker (search, ↑/↓, Enter, click, X button, Esc)
@@ -119,7 +176,9 @@ App sources are checked with `swiftc -parse App/Sources/SpellCheck/*.swift`.
    base64 .p8, `NOTARY_API_KEY_ID`, `NOTARY_ISSUER_ID`) — workflow steps
    already exist.
 4. FixKey feature parity still missing: voice dictation; polish.
-5. `scripts/make-icons.mjs` glyph styles are hardcoded (the SVG-arg path is unused).
+5. `scripts/make-icons.mjs` glyph styles are hardcoded, but the SVG sources
+   now live in `App/Resources/MenuBarIcons/svg/` and the script emits vector
+   PDFs + PNGs from the same geometry.
 6. GitHub macOS runners occasionally fail with "job was not acquired by
    Runner" (capacity) — that is infrastructure, not the code; re-push the tag
    to retry (the agent token cannot `gh run rerun`).

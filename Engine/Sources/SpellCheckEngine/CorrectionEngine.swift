@@ -109,9 +109,13 @@ public actor CorrectionEngine {
             case .accessDenied:
                 return "SpellCheck needs Accessibility permission (System Settings → Privacy & Security → Accessibility)"
             case .replaceFailed:
-                return "Could not replace the text in the original app"
+                return "Could not replace the text in the original app — nothing was changed. Re-select the text and try again."
             case .targetUnavailable(let appName):
                 return "\(appName) can no longer be used as the target — the original selection is gone. Re-select the text and try again."
+            case .selectionChanged(let appName):
+                return "The original selection is no longer intact in \(appName), so nothing was replaced. Re-select the text and try again."
+            case .unverified(let appName):
+                return "The correction was pasted into \(appName), but SpellCheck could not verify the result — please check the text (⌘Z undoes it if needed). The corrected text is also on the clipboard."
             }
         }
         return error.localizedDescription

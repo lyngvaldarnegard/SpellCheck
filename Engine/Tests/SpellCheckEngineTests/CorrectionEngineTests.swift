@@ -169,7 +169,31 @@ struct CorrectionEngineTests {
 
         await engine.run(prompt: prompt)
 
-        #expect(recorder.events.last == .failed("Could not replace the text in the original app"))
+        #expect(recorder.events.last == .failed("Could not replace the text in the original app — nothing was changed. Re-select the text and try again."))
+    }
+
+    @Test func changedSelectionIsReportedWithoutTouchingText() async {
+        let source = FakeSource()
+        source.replaceError = TextSourceError.selectionChanged("TextEdit")
+        let backend = FakeBackend()
+        let recorder = EventRecorder()
+        let engine = makeEngine(backend: backend, source: source, recorder: recorder)
+
+        await engine.run(prompt: prompt)
+
+        #expect(recorder.events.last == .failed("The original selection is no longer intact in TextEdit, so nothing was replaced. Re-select the text and try again."))
+    }
+
+    @Test func unverifiedReplacementIsReportedHonestly() async {
+        let source = FakeSource()
+        source.replaceError = TextSourceError.unverified("Notion")
+        let backend = FakeBackend()
+        let recorder = EventRecorder()
+        let engine = makeEngine(backend: backend, source: source, recorder: recorder)
+
+        await engine.run(prompt: prompt)
+
+        #expect(recorder.events.last == .failed("The correction was pasted into Notion, but SpellCheck could not verify the result — please check the text (⌘Z undoes it if needed). The corrected text is also on the clipboard."))
     }
 
     @Test func lostTargetIsReportedWithAppName() async {

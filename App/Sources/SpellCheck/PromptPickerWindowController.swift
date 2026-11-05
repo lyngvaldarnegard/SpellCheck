@@ -28,7 +28,7 @@ final class PromptPickerWindowController: NSObject, NSWindowDelegate {
 
     init(prompts: [Prompt]) {
         self.prompts = prompts
-        panel = NSPanel(
+        panel = PickerPanel(
             contentRect: NSRect(x: 0, y: 0, width: Self.panelWidth, height: Self.panelHeight),
             styleMask: [.borderless, NSWindow.StyleMask(rawValue: 128) /* NSNonactivatingPanelStyleMask */],
             backing: .buffered,
@@ -41,6 +41,8 @@ final class PromptPickerWindowController: NSObject, NSWindowDelegate {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.delegate = self
+        panel.hidesOnDeactivate = false
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         panel.standardWindowButton(.closeButton)?.isHidden = true
         panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
         panel.standardWindowButton(.zoomButton)?.isHidden = true
@@ -128,8 +130,49 @@ final class PromptPickerWindowController: NSObject, NSWindowDelegate {
         filter(searchText: "")
         searchField.stringValue = ""
         positionPanel()
+        makeKeyAndFocus()
+    }
+
+    /// The picker must own the keyboard the moment it appears, without the
+    /// user clicking into it first. A borderless panel cannot become key on
+    /// its own (hence the `PickerPanel` subclass), and keyboard input only
+    /// reaches an app that is active — so SpellCheck activates itself, makes
+    /// the panel key and hands first-responder status to the search field's
+    /// field editor. The target app/selection were captured before the
+    /// picker opened, so this focus change cannot lose them.
+    private func makeKeyAndFocus() {
+        NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
         panel.makeFirstResponder(searchField)
+        // App activation can be asynchronous — re-assert key window and
+        // first responder on the next runloop tick.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            if !self.panel.isKeyWindow {
+                NSApp.activate(ignoringOtherApps: true)
+                self.panel.makeKeyAndOrderFront(nil)
+            }
+            self.panel.makeFirstResponder(self.searchField)
+        }
+    }
+
+    var isPanelKeyWindow: Bool { panel.isKeyWindow }
+
+    // Internal hooks used by the AppKit focus tests (see PromptPickerAndIconTests).
+    func closeForTestingInternal() { close() }
+    func sendEventForTesting(_ event: NSEvent) { panel.sendEvent(event) }
+    func moveSelectionForTestingInternal(_ delta: Int) { moveSelection(delta) }
+    func selectedPromptNameForTestingInternal() -> String? {
+        filtered.indices.contains(selectedIndex) ? filtered[selectedIndex].name : nil
+    }
+    func searchForTestingInternal(_ text: String) {
+        searchField.stringValue = text
+        filter(searchText: text)
+    }
+
+    var firstResponderIsSearchField: Bool {
+        guard let editor = panel.firstResponder as? NSTextView else { return false }
+        return editor.delegate === searchField
     }
 
     private func positionPanel() {
@@ -308,6 +351,13 @@ final class PromptPickerRowView: NSView {
     }
 }
 
+
+/// A borderless panel that CAN become the key window — `NSPanel` refuses key
+/// status for borderless windows, which is why keystrokes reached the
+/// original text field instead of the picker in v0.2.2.
+final class PickerPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+}
 
 /// The picker's table: runs a prompt on a single row click.
 final class PickerTableView: NSTableView {

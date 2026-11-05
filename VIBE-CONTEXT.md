@@ -6,9 +6,11 @@ Sigurd's macOS menu-bar app that corrects text in any app: select text (or place
 
 The app was built by a different chat (Vibe Nuage Agent). The Vibe chat's job: hold the standing context and build the next-phase prompt with the prompt-bygger skill.
 
-## Status (05.11.2026 — v2 SHIPPED as v0.2.2; repo now public; Sparkle live)
+## Status (05.11.2026 — v0.2.3 SHIPPED, fixing the v0.2.2 real-Mac failures)
 
-- v2 is implemented, merged to main and released: **v0.2.2** (v0.2.0 was broken — ad-hoc + hardened runtime dyld abort — fixed in v0.2.1; v0.2.2 adds the picker X button + working Enter/arrows/Esc via the search field's `control(_:textView:doCommandBy:)` delegate; a `keyDown` override on NSSearchField never fires because the field editor eats the keys).
+- **Sigurd tested v0.2.2 on his Mac (ground truth):** Enter in the picker reached the ORIGINAL text field (destructive line break); a clicked prompt in TextEdit partially changed the text but showed "Could not replace the text"; saved prompts were lost across the update (API key survived); the menu-bar icon looked low-res. The v0.2.2 handoff claim that the field-editor delegate fixed the keyboard was WRONG.
+- **v0.2.3** fixes all four: `PickerPanel` (canBecomeKey) + explicit `NSApp.activate` so the picker owns the keyboard; FixKey-style clipboard-paste replacement with pre-paste selection verification, single-attempt paste, honest unverified/failed distinction, corrected text stays on the clipboard; lossy prompt decoding + corrupt-file backup + no stale-snapshot saves; vector template PDFs (+SVG sources) for all four icon styles with the Ω full-size and a knocked-out checkmark. Tracked in GitHub issues — they stay OPEN until Sigurd confirms on his Mac.
+- v2 history: v0.2.0 broken (ad-hoc + hardened runtime dyld abort) → v0.2.1 launch fixed → v0.2.2 picker X button + field-editor delegate (insufficient) → v0.2.3.
 - Repo **made public** (Sigurd's choice) → Sparkle feed reachable. Sigurd generated the Sparkle EdDSA key pair: public key embedded as `SUPublicEDKey`, private key is repo secret `SPARKLE_PRIVATE_KEY`. Releases sign the zip (`sparkle:edSignature` verified in appcast.xml).
 - Sigurd's v1 settings migrated automatically (API key preserved — he noticed and asked why; that's the intended `Settings.migrated()` behavior).
 - CI now: tests + package + verify the SHIPPED zip + signature-consistency checks + 8-second launch smoke test on macos-15.

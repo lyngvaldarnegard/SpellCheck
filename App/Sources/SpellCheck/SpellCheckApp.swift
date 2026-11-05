@@ -85,14 +85,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         settingsController = SettingsWindowController(settings: settings)
         settingsController.configureSave { [weak self] newSettings in
-            try await self?.saveSettings(newSettings)
+            guard let self else { return }
+            // The Settings window never edits prompts — always keep the
+            // live prompt list so a stale Settings snapshot cannot wipe
+            // prompts created or edited in the Prompt Editor.
+            var merged = newSettings
+            merged.prompts = self.settings.prompts
+            try await self.saveSettings(merged)
         }
 
         promptEditorController = PromptEditorWindowController(
-            settings: settings,
-            save: { [weak self] current, prompts in
+            prompts: settings.prompts,
+            save: { [weak self] prompts in
                 guard let self else { return }
-                var updated = current
+                var updated = self.settings
                 updated.prompts = prompts
                 try await self.saveSettings(updated)
             },
@@ -140,7 +146,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 Task { @MainActor in self?.handle(event) }
             }
         )
-        promptEditorController?.reload(settings: newSettings)
+        promptEditorController?.reload(prompts: newSettings.prompts)
+        settingsController?.reload(settings: newSettings)
     }
 
     private func applyLoginItem(_ newSettings: AppSettings) throws {
@@ -196,8 +203,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self?.runPrompt(prompt)
                 }
                 picker.onCancel = { [weak self] in
-                    self?.pickerController = nil
-                    self?.pendingGrab = nil
+                    guard let self else { return }
+                    self.pickerController = nil
+                    let grabbed = self.pendingGrab
+                    self.pendingGrab = nil
+                    // Give the keyboard back to the app the text came from.
+                    if let grabbed {
+                        Task { await grabbed.refocus?() }
+                    }
                 }
                 self.pickerController = picker
                 picker.show()

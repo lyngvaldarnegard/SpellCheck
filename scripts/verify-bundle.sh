@@ -93,7 +93,7 @@ else
     fi
 fi
 
-for res in AppIcon.icns MenuBarIconTemplate.png MenuBarIcons/omega-check.png; do
+for res in AppIcon.icns MenuBarIconTemplate.png MenuBarIcons/omega-check.png MenuBarIcons/omega-check.pdf MenuBarIcons/omega.pdf MenuBarIcons/spellcheck.pdf MenuBarIcons/checkmark.pdf; do
     if [ -e "$APP_DIR/Contents/Resources/$res" ]; then
         ok "resource $res"
     else
