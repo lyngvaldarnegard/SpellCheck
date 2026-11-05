@@ -5,6 +5,12 @@
     <link>https://github.com/lyngvaldarnegard/SpellCheck/releases</link>
     <description>SpellCheck updates</description>
     <language>en</language>
-    <!-- Items are appended by the release workflow (scripts/make-appcast.sh). -->
+    <item>
+      <title>Version 0.1.0</title>
+      <pubDate>Thu, 05 Nov 2026 05:09:47 +0000</pubDate>
+      <sparkle:shortVersionString>0.1.0</sparkle:shortVersionString>
+      <sparkle:version>0.1.0</sparkle:version>
+      <enclosure url="https://github.com/lyngvaldarnegard/SpellCheck/releases/download/v0.1.0/SpellCheck-macOS.zip" length="248056" type="application/octet-stream"/>
+    </item>
   </channel>
 </rss>
