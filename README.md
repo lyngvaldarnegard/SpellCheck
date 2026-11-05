@@ -15,10 +15,10 @@ you were using.
   - *Offline (rule-based)* — fixes common misspellings, doubled words, doubled
     letters, missing spaces after punctuation, and capitalization. No account
     needed.
-  - *OpenAI-compatible API* — any chat-completions endpoint (OpenAI, DeepSeek,
-    OpenRouter, Ollama, LM Studio, …) for rewriting, summarizing, expanding and
-    translating. Settings can **fetch the model list from the API** so you can
-    pick the model from a dropdown instead of typing its name.
+  - *OpenAI-compatible API* — any chat-completions endpoint (Mistral, OpenAI,
+    DeepSeek, OpenRouter, Ollama, LM Studio, …) for rewriting, summarizing,
+    expanding and translating. Settings can **fetch the model list from the
+    API** so you can pick the model from a dropdown instead of typing its name.
 - **Built-in actions** — Fix typos and grammar, Make professional, Make casual,
     Summarize, Expand, Translate (with configurable target language).
 - **Custom prompts** — define your own actions in Settings; they appear in the
@@ -32,29 +32,46 @@ you were using.
 
 ## Install
 
-### Download (recommended)
+SpellCheck is a menu-bar app for **macOS 13 (Ventura) or later**. Pick one of
+the two ways below.
 
-Releases are published on the [Releases](https://github.com/lyngvaldarnegard/SpellCheck/releases)
-page (tagged `v*.*.*`, built by CI on macOS). Download `SpellCheck-macOS.zip`,
-unzip it, move `SpellCheck.app` to your **Applications** folder and launch it.
+### Option A — download the prebuilt app (recommended)
 
-Because the app is not notarized yet, macOS Gatekeeper may block the first
-launch: **right-click the app → Open → Open** (or allow it in System Settings →
-Privacy & Security). Then grant **Accessibility** permission (System Settings →
-Privacy & Security → Accessibility → add SpellCheck) — the app prompts for it
-on first use.
+1. Go to the repo's [**Releases**](https://github.com/lyngvaldarnegard/SpellCheck/releases)
+   page and download **`SpellCheck-macOS.zip`** from the latest release.
+   - If no release exists yet, create one: merge the PR into `main`, then in
+     the repo go to **Actions → Release → Run workflow** (branch `main`,
+     version e.g. `v0.1.0`) and wait for it to finish — it builds on a macOS
+     runner, tests, signs (if secrets are set) and uploads the zip.
+     (Push-triggered workflows are restricted in this repo, so the manual
+     dispatch is the reliable way.)
+2. Unzip the archive (double-click it in Downloads).
+3. Drag **`SpellCheck.app`** into your **Applications** folder.
+4. The first launch may be blocked by Gatekeeper because the app is not
+   notarized: **right-click `SpellCheck.app` → Open → Open**. (If macOS shows
+   "app can't be opened", also check System Settings → Privacy & Security for
+   an "Open Anyway" button.)
+5. Grant **Accessibility** permission: System Settings → Privacy & Security →
+   **Accessibility** → enable **SpellCheck**. This is required so the app can
+   read and edit text in other apps. The app will prompt you on first use.
+6. Launch SpellCheck from Applications. A keyboard icon (⌨) appears in the
+   menu bar — click it for **Settings…** to enter your API key.
 
-### Build from source
+### Option B — build from source on your Mac
+
+Requires Xcode 16+ / Swift 6 toolchain (preinstalled or via `xcode-select --install`).
 
 ```sh
 git clone https://github.com/lyngvaldarnegard/SpellCheck.git
 cd SpellCheck
-scripts/build-app.sh        # creates build/SpellCheck.app (release)
-# or, to also produce the distributable zip:
+git checkout vibe/spellcheck-scaffold-6a9537   # or main once merged
+scripts/build-app.sh        # creates build/SpellCheck.app (release build)
+# optional: also produce the distributable zip:
 scripts/package-release.sh  # creates build/SpellCheck-macOS.zip
 ```
 
-To distribute a signed/notarized build, set `SIGNING_IDENTITY`:
+Then open `build/SpellCheck.app` (right-click → Open on first launch) or move
+it to Applications. To produce a signed build for distribution:
 
 ```sh
 SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)" scripts/package-release.sh
@@ -95,21 +112,21 @@ workflow regenerates it for every release and signs the zip when the
    `v0.1.0`). CI builds, tests, signs, publishes the GitHub Release with
    `SpellCheck-macOS.zip` and updates `appcast.xml` on `main`.
 
-## Using an API provider (e.g. DeepSeek)
+## Using an API provider (e.g. Mistral)
 
-1. Open SpellCheck → **Settings…** (or press `,` in the menu-bar menu).
+1. Open SpellCheck → **Settings…** (menu-bar icon, or press `,`).
 2. Choose backend **OpenAI-compatible API**.
-3. Click the **DeepSeek** provider preset (fills in `https://api.deepseek.com/v1`
-   and the cheap, fast `deepseek-chat` model; `deepseek-reasoner` is the
-   slower reasoning model — both appear in the list).
-4. Paste your API key from [platform.deepseek.com](https://platform.deepseek.com/api_keys).
-5. Click **Fetch models** — the dropdown is filled from the API's `/models`
-   endpoint, so you can pick exactly the model you want.
+3. Click the **Mistral** provider preset — it fills in `https://api.mistral.ai/v1`
+   and the cheap, fast `mistral-small-latest` model.
+4. Paste your API key from [console.mistral.ai](https://console.mistral.ai/api-keys/).
+5. Click **Fetch models** — the dropdown is filled from Mistral's `/v1/models`
+   endpoint, so you can pick exactly the model you want (`mistral-small-latest`,
+   `mistral-medium-latest`, `mistral-large-latest`, `codestral-latest`, …).
 6. Click **Save**.
 
-Other presets: OpenAI, OpenRouter, Ollama (local, no key needed — models are
-fetched from `http://localhost:11434/v1`). You can always type a custom base
-URL and model name manually.
+Other presets: OpenAI, DeepSeek, OpenRouter, Ollama (local, no key needed —
+models are fetched from `http://localhost:11434/v1`). You can always type a
+custom base URL and model name manually.
 
 ## Testing
 

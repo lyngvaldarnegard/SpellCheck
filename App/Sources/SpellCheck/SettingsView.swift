@@ -153,6 +153,7 @@ struct SettingsView: View {
 }
 
 private enum APIProviderPreset: String, CaseIterable, Identifiable {
+    case mistral = "Mistral"
     case openAI = "OpenAI"
     case deepSeek = "DeepSeek"
     case openRouter = "OpenRouter"
@@ -164,6 +165,7 @@ private enum APIProviderPreset: String, CaseIterable, Identifiable {
 
     var baseURL: String {
         switch self {
+        case .mistral: return "https://api.mistral.ai/v1"
         case .openAI: return "https://api.openai.com/v1"
         case .deepSeek: return "https://api.deepseek.com/v1"
         case .openRouter: return "https://openrouter.ai/api/v1"
@@ -173,9 +175,10 @@ private enum APIProviderPreset: String, CaseIterable, Identifiable {
 
     var defaultModel: String {
         switch self {
+        case .mistral: return "mistral-small-latest"
         case .openAI: return "gpt-4o-mini"
         case .deepSeek: return "deepseek-chat"
-        case .openRouter: return "deepseek/deepseek-chat"
+        case .openRouter: return "mistralai/mistral-small-latest"
         case .ollama: return "llama3.2"
         }
     }
