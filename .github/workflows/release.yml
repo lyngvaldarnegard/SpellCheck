@@ -75,7 +75,7 @@ jobs:
           #   sparkle:edSignature="base64..." length="123"
           # Extract ONLY the edSignature value — embedding the whole output
           # as the signature produces an invalid appcast.
-          SIG=$("$SIGN_TOOL" build/SpellCheck-macOS.zip --private-key /tmp/sparkle_private_key.pem | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p')
+          SIG=$("$SIGN_TOOL" --ed-key-file /tmp/sparkle_private_key.pem build/SpellCheck-macOS.zip | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p')
           if [ -z "$SIG" ]; then
             echo "Failed to extract Sparkle edSignature" >&2
             exit 1
