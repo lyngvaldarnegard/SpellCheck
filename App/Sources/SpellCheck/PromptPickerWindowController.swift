@@ -63,7 +63,6 @@ final class PromptPickerWindowController: NSObject, NSWindowDelegate {
 
         // X button (top-right): closes the picker without touching the text.
         closeButton.translatesAutoresizingMaskIntoConstraints = false
-        closeButton.bezelStyle = .accessoryRounded
         closeButton.isBordered = false
         closeButton.image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "Close")
         closeButton.contentTintColor = NSColor.secondaryLabelColor
@@ -204,7 +203,7 @@ final class PromptPickerWindowController: NSObject, NSWindowDelegate {
 }
 // MARK: - Table plumbing
 
-extension PromptPickerWindowController: NSControlTextEditingDelegate {
+extension PromptPickerWindowController: NSSearchFieldDelegate {
 
     /// Live filtering while typing.
     func controlTextDidChange(_ obj: Notification) {
@@ -215,16 +214,16 @@ extension PromptPickerWindowController: NSControlTextEditingDelegate {
     /// is the reliable way to intercept ↑/↓/Enter/Escape while editing text.
     func control(_ control: NSControl, textView view: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
         switch commandSelector {
-        case #selector(moveUp(_:)):
+        case NSSelectorFromString("moveUp:"):
             moveSelection(-1)
             return true
-        case #selector(moveDown(_:)):
+        case NSSelectorFromString("moveDown:"):
             moveSelection(1)
             return true
-        case #selector(insertNewline(_:)):
+        case NSSelectorFromString("insertNewline:"):
             runSelected()
             return true
-        case #selector(cancelOperation(_:)), #selector(complete(_:)):
+        case NSSelectorFromString("cancelOperation:"), NSSelectorFromString("cancel:"), NSSelectorFromString("complete:"):
             cancel()
             return true
         default:
