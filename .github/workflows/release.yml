@@ -61,13 +61,20 @@ jobs:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: |
           echo "$SPARKLE_PRIVATE_KEY" > /tmp/sparkle_private_key.pem
-          curl -sL https://github.com/sparkle-project/Sparkle/releases/download/2.7.1/Sparkle-2.7.1.tar.xz -o /tmp/sparkle.tar.xz
+          curl -sL https://github.com/sparkle-project/Sparkle/releases/download/2.10.1/Sparkle-2.10.1.tar.xz -o /tmp/sparkle.tar.xz
           tar -xf /tmp/sparkle.tar.xz -C /tmp
+          SIGN_TOOL=$(find /tmp -maxdepth 4 -type f -name sign_update | head -1)
+          if [ -z "$SIGN_TOOL" ]; then
+            echo "sign_update tool not found after extracting Sparkle" >&2
+            find /tmp -maxdepth 2 -type d | head -20 >&2
+            exit 1
+          fi
+          chmod +x "$SIGN_TOOL"
           # sign_update prints XML attributes like:
           #   sparkle:edSignature="base64..." length="123"
           # Extract ONLY the edSignature value — embedding the whole output
           # as the signature produces an invalid appcast.
-          SIG=$(/tmp/Sparkle-2.7.1/bin/sign_update build/SpellCheck-macOS.zip --private-key /tmp/sparkle_private_key.pem | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p')
+          SIG=$("$SIGN_TOOL" build/SpellCheck-macOS.zip --private-key /tmp/sparkle_private_key.pem | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p')
           if [ -z "$SIG" ]; then
             echo "Failed to extract Sparkle edSignature" >&2
             exit 1
