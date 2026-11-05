@@ -1,4 +1,4 @@
-<!-- VIBE-CONTEXT.md — living project context maintained by Sigurd's Vibe chat. The knowledge twin of HANDOFF.md: what the next phase must change and why. Keep in sync with the Personal Knowledge topic "spellcheck-app". -->
+<!-- VIBE-CONTEXT.md — living project context maintained by Sigurd's Vibe chat. The knowledge twin of HANDOFF.md: what the next phase must change and why. Kept in sync with the Personal Knowledge topic "spellcheck-app". -->
 
 # SpellCheck app — Vibe context
 
@@ -28,9 +28,8 @@ The app was built by a different chat (Vibe Nuage Agent). The Vibe chat's job: h
 3. **Copy FixKey's UI wholesale**, at least the prompt page. Settings must contain: API configuration, hot key, and such settings — and prompts get their own separate tab/window: a FixKey-style Prompt Editor (reference description below).
 4. **⌘S saves.** Cmd+S must save the prompts and the settings (standard macOS save shortcut in the Prompt Editor and Settings windows — not just a Save button click).
 5. **Save indicator.** There must be a visible indicator when something is saved — both after pressing the Save button and after ⌘S. The user must get confirmation that the save landed.
-6. FixKey reference screenshots: menu dropdown + Prompt Editor (held by Vibe; description below). The prompt for the coding AI must carry the full UI description.
-
-Open decision before the prompt is built: in FixKey's own menu, ⌘S is the global "Fix current line" hot key, not a save shortcut. Either SpellCheck keeps ⌥⌘K as the global fix key and uses ⌘S for saving in-app, or it copies FixKey's global ⌘S fix and saves on another shortcut. Sigurd must pick.
+6. **Global hot key default: ⌥L (Option+L)** — Sigurd's pick, replacing ⌥⌘K. ⌘S stays reserved for in-app saving only. Consequence for the build: `HotKey.isUsableAsGlobalHotkey` currently requires Cmd or Ctrl in the modifier mask — that validation must be relaxed so a bare Option+key can register as the global default.
+7. FixKey reference screenshots: menu dropdown + Prompt Editor (held by Vibe; description below). The prompt for the coding AI must carry the full UI description.
 
 ## FixKey UI reference (from Sigurd's screenshots — prompt source material)
 
@@ -49,4 +48,6 @@ Prompt Editor window (dark theme): standard macOS window, traffic lights top-lef
 
 ## The prompt workflow (standing plan)
 
-Build the next-phase prompt with the prompt-bygger skill (iterative, until Sigurd says ready). Inputs now in hand: HANDOFF.md (on main), the v2 requirements above, and the FixKey UI reference. The prompt targets an expensive coding AI (Vibe Code, Cursor, Claude Code or similar) and must be self-contained: architecture summary, current state, v2 requirements (API-only, all prompts editable, FixKey-style Prompt Editor + Settings), the UI reference description, and the review gaps worth fixing (confirmation toggle, clipboard clobber, kAXValue fallback, timeout). Never claim the app is tested/fixed on his behalf; his verdict is ground truth over any green suite. Output prompt in English.
+Build the next-phase prompt with the prompt-bygger skill (iterative, until Sigurd says ready). Inputs now in hand: HANDOFF.md (on main), the v2 requirements above, and the FixKey UI reference. The prompt targets an expensive coding AI (Vibe Code, Cursor, Claude Code or similar) and must be self-contained: architecture summary, current state, v2 requirements (API-only, all prompts editable, FixKey-style Prompt Editor + Settings, ⌥L default), the UI reference description, and the review gaps worth fixing (confirmation toggle, clipboard clobber, kAXValue fallback, timeout). Never claim the app is tested/fixed on his behalf; his verdict is ground truth over any green suite. Output prompt in English.
+
+Update this file when: a new release lands, requirements change, the prompt is built, or the app ships v2. The canonical twin lives in the Personal Knowledge topic "spellcheck-app" — keep both in sync.
