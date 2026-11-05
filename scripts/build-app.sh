@@ -13,8 +13,12 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CONFIG="${1:-release}"
 APP_DIR="$ROOT/build/SpellCheck.app"
 
-swift build --package-path "$ROOT/App" -c "$CONFIG"
-BIN_DIR="$(swift build --package-path "$ROOT/App" -c "$CONFIG" --show-bin-path)"
+if swift build --package-path "$ROOT/App" -c "$CONFIG" --arch arm64 --arch x86_64 2>/dev/null; then
+    BIN_DIR="$(swift build --package-path "$ROOT/App" -c "$CONFIG" --arch arm64 --arch x86_64 --show-bin-path)"
+else
+    swift build --package-path "$ROOT/App" -c "$CONFIG"
+    BIN_DIR="$(swift build --package-path "$ROOT/App" -c "$CONFIG" --show-bin-path)"
+fi
 
 rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"

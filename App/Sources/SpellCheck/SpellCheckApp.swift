@@ -34,12 +34,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let urls = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
         let supportDir = (urls.first ?? URL(fileURLWithPath: NSHomeDirectory()))
             .appendingPathComponent("SpellCheck", isDirectory: true)
+        let settingsFile = supportDir.appendingPathComponent("settings.json")
+        let isFirstRun = !FileManager.default.fileExists(atPath: settingsFile.path)
         settingsStore = try? SettingsStore(directory: supportDir)
         NSApp.setActivationPolicy(.accessory)
 
         Task { @MainActor in
             await self.setup()
+            if isFirstRun {
+                self.showFirstRunNotice()
+            }
         }
+    }
+
+    /// Menu-bar-only apps show no window on launch — make that obvious.
+    private func showFirstRunNotice() {
+        openSettings()
+        let alert = NSAlert()
+        alert.messageText = "SpellCheck is running"
+        alert.informativeText = "Look for the spellcheck icon in the menu bar (top right). Select text in any app and press the hot key (default ⌥⌘K) to correct it."
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
     }
 
     private func setup() async {

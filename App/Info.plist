@@ -8,6 +8,12 @@
 	<string>SpellCheck</string>
 	<key>CFBundleIdentifier</key>
 	<string>io.spellcheck.app</string>
+	<key>CFBundleExecutable</key>
+	<string>SpellCheck</string>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>13.0</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>CFBundleShortVersionString</key>
@@ -24,7 +30,6 @@
 	<true/>
 	<key>SUFeedURL</key>
 	<string>https://raw.githubusercontent.com/lyngvaldarnegard/SpellCheck/main/appcast.xml</string>
-	<key>SUPublicEDKey</key>
-	<string>REPLACE_WITH_SPARKLE_PUBLIC_EDDSA_KEY</string>
+	<!-- SUPublicEDKey is added here once Sparkle keys are generated (see README). -->
 </dict>
 </plist>
