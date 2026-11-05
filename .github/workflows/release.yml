@@ -62,11 +62,12 @@ jobs:
         run: |
           echo "$SPARKLE_PRIVATE_KEY" > /tmp/sparkle_private_key.pem
           curl -sL https://github.com/sparkle-project/Sparkle/releases/download/2.10.1/Sparkle-2.10.1.tar.xz -o /tmp/sparkle.tar.xz
-          tar -xf /tmp/sparkle.tar.xz -C /tmp
-          SIGN_TOOL=$(find /tmp -maxdepth 4 -type f -name sign_update | head -1)
+          mkdir -p /tmp/sparkle-tools && tar -xf /tmp/sparkle.tar.xz -C /tmp/sparkle-tools
+          # (note: /tmp is a symlink on macOS runners — find into a real dir)
+          SIGN_TOOL=$(find /tmp/sparkle-tools -type f -name sign_update -not -path "*/old_dsa_scripts/*" | head -1)
           if [ -z "$SIGN_TOOL" ]; then
             echo "sign_update tool not found after extracting Sparkle" >&2
-            find /tmp -maxdepth 2 -type d | head -20 >&2
+            find /tmp/sparkle-tools -maxdepth 3 | head -20 >&2
             exit 1
           fi
           chmod +x "$SIGN_TOOL"
