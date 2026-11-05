@@ -6,12 +6,14 @@ Sigurd's macOS menu-bar app that corrects text in any app: select text (or place
 
 The app was built by a different chat (Vibe Nuage Agent). The Vibe chat's job: hold the standing context and build the next-phase prompt with the prompt-bygger skill.
 
-## Status (05.11.2026)
+## Status (05.11.2026 — v2 refactor landed)
 
-- Code reviewed end to end by Vibe. HANDOFF.md from the building chat is published on main (commit `6a941e3`).
-- Latest release: **v0.1.4** (embeds Sparkle.framework + rpath — fixed the instant dyld launch crash; bundle verification in CI/release). Release history: v0.1.0 broken (no CFBundleExecutable) → v0.1.1 launch fixed, universal → v0.1.2 icon → v0.1.3 Ω✓ icon + picker → v0.1.4 crash fix.
-- Tests: Core 57/57, Engine 29/29 (Linux), App tests + verify-bundle on macos-15 CI. CI uses Swift 6.2 (6.0.3 had an IRGen crash).
-- Sigurd's verdict on v0.1.4 so far (05.11.2026): the app launches and runs, but the UX is wrong — offline mode must die, prompts must be editable, the UI must be copied from FixKey. Details below.
+- **The v2 refactor is implemented** (branch `vibe/v2-core-workflow-720d1f`, PR to main): ⌥L prompt picker (FixKey-style dark popup, search/↑↓/Enter/Esc/click/empty state), API-only (offline mode deleted), all prompts editable via a separate FixKey-style Prompt Editor, Review/confirmation window + setting removed, ⌥L accepted as a global shortcut with visible registration failures, v1 settings migrated without loss, AX grab with layered fallbacks (selected text → value+range → clipboard), target app re-activated + write verified before replacing, errors as alert windows, ⌘S + visible Saved indicator in Settings and Prompt Editor, Mistral preset pairs base URL with `mistral-small-latest`, bundles always signed (ad-hoc fallback), release workflow extracts the real `sparkle:edSignature`. Tests: Core 48/48, Engine 27/27 on Linux; App compiles/tests on macos-15 CI.
+- **Still needs Sigurd's real-Mac verification**: the full workflow in Notion and TextEdit (Notion is Electron and may only work through the clipboard fallback layer).
+- **Still needs user actions**: Sparkle key pair (generate_keys on a Mac + `SPARKLE_PRIVATE_KEY` secret + `SUPublicEDKey` in Info.plist), a credential-free public feed for appcast+zips (repo is private; or make repo public), and optionally a Developer ID certificate + notarization secrets for a stable signing identity.
+- Pre-v2 history: latest release **v0.1.4** (Sparkle.framework embedded + rpath; bundle verification in CI/release). v0.1.0 broken (no CFBundleExecutable) → v0.1.1 launch fixed, universal → v0.1.2 icon → v0.1.3 Ω✓ icon + picker → v0.1.4 crash fix.
+- CI uses Swift 6.2 (6.0.3 had an IRGen crash).
+- Sigurd's v2 requirements below are now implemented; kept for context.
 
 ## Handoff key facts (HANDOFF.md on main)
 

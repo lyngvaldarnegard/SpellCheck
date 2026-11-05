@@ -2,14 +2,22 @@ import SwiftUI
 import SpellCheckCore
 import SpellCheckEngine
 
-/// SwiftUI settings window content. All state lives in the engine's
-/// `SettingsStore`; changes are committed through `onChange`.
+/// SwiftUI settings window content: API configuration, global shortcut and
+/// app behaviour. Prompts live in their own Prompt Editor window.
 struct SettingsView: View {
     @State private var settings: AppSettings
     @State private var availableModels: [String] = []
     @State private var isFetchingModels = false
     @State private var modelsError: String?
+    @State private var saveState: SaveState = .idle
+    @State private var saveError: String?
     private let controller: SettingsWindowController
+
+    private enum SaveState: Equatable {
+        case idle
+        case saving
+        case saved
+    }
 
     init(controller: SettingsWindowController) {
         self.controller = controller
@@ -18,23 +26,22 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            Section("Correction") {
-                Picker("Backend", selection: $settings.backend) {
-                    ForEach(BackendKind.allCases) { kind in
-                        Text(kind.rawValue).tag(kind)
-                    }
-                }
-                if settings.backend == .openAICompatible {
-                    providerPresets
-                    SecureField("API Key", text: $settings.apiKey)
-                        .textContentType(.password)
-                    TextField("API Base URL", text: $settings.baseURL)
-                    modelPicker
-                }
+            Section("API") {
+                providerPresets
+                SecureField("API Key", text: $settings.apiKey)
+                    .textContentType(.password)
+                TextField("API Base URL", text: $settings.baseURL)
+                modelPicker
+                Text("All text editing runs through this API. Get a key at your provider's dashboard (e.g. console.mistral.ai).")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
 
-            Section("Hot Key") {
+            Section("Global Shortcut") {
                 HotKeyRecorderView(hotKey: $settings.hotKey)
+                Text("Opens the prompt picker over the current selection. Any combination works — Option-only combos like ⌥L are fine.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
 
             Section("Menu Bar Icon") {
@@ -53,54 +60,52 @@ struct SettingsView: View {
                         }
                     }
                 }
-                Text("The icon is applied immediately when you press Save.")
+                Text("The icon is applied when you save.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
 
             Section("Behaviour") {
-                Toggle("Show confirmation before replacing", isOn: $settings.showConfirmation)
                 Toggle("Launch at login", isOn: $settings.launchAtLogin)
-                LabeledContent("Translation language") {
-                    TextField("Language", text: $settings.translationLanguage)
-                        .frame(width: 140)
-                }
-            }
-
-            Section("Custom Prompts") {
-                ForEach($settings.customPrompts) { $prompt in
-                    VStack(alignment: .leading) {
-                        TextField("Name", text: $prompt.name)
-                        TextField("Prompt", text: $prompt.prompt)
-                    }
-                }
-                Button("Add Prompt") {
-                    settings.customPrompts.append(CustomPrompt(name: "New Prompt", prompt: ""))
-                }
-                .disabled(settings.customPrompts.count >= 10)
             }
 
             Section {
                 HStack {
-                    Text("SpellCheck works in every app. Select text or place the caret in a sentence, then press the hot key.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                    switch saveState {
+                    case .saving:
+                        Text("Saving…").foregroundStyle(.secondary)
+                    case .saved:
+                        Label("Saved", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                    case .idle:
+                        Text("")
+                    }
                     Spacer()
-                    Button("Save") { controller.commit(settings) }
-                        .keyboardShortcut(.defaultAction)
+                    Button("Save") {
+                        Task { await saveSettings() }
+                    }
+                    .keyboardShortcut("s", modifiers: .command)
+                    .disabled(saveState == .saving)
                 }
             }
         }
         .formStyle(.grouped)
-        .frame(minWidth: 520, minHeight: 480)
+        .frame(minWidth: 560, minHeight: 480)
+        .alert("Could not save settings", isPresented: .init(
+            get: { saveError != nil },
+            set: { if !$0 { saveError = nil } }
+        )) {
+            Button("OK") {}
+        } message: {
+            Text(saveError ?? "")
+        }
     }
 
     private var providerPresets: some View {
         HStack(spacing: 8) {
             Text("Provider")
             Spacer()
-            ForEach(APIProviderPreset.allCases) { preset in
-                Button(preset.label) {
+            ForEach(APIProvider.allCases) { preset in
+                Button(preset.displayName) {
                     applyPreset(preset)
                 }
                 .buttonStyle(.bordered)
@@ -113,7 +118,7 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 if availableModels.isEmpty {
-                    TextField("Model (e.g. deepseek-chat)", text: $settings.model)
+                    TextField("Model (e.g. mistral-small-latest)", text: $settings.model)
                 } else {
                     Picker("Model", selection: $settings.model) {
                         ForEach(availableModels, id: \.self) { model in
@@ -141,7 +146,7 @@ struct SettingsView: View {
         }
     }
 
-    private func applyPreset(_ preset: APIProviderPreset) {
+    private func applyPreset(_ preset: APIProvider) {
         settings.baseURL = preset.baseURL
         settings.model = preset.defaultModel
         availableModels = []
@@ -171,36 +176,17 @@ struct SettingsView: View {
             }
         }
     }
-}
 
-private enum APIProviderPreset: String, CaseIterable, Identifiable {
-    case mistral = "Mistral"
-    case openAI = "OpenAI"
-    case deepSeek = "DeepSeek"
-    case openRouter = "OpenRouter"
-    case ollama = "Ollama (local)"
-
-    var id: String { rawValue }
-
-    var label: String { rawValue }
-
-    var baseURL: String {
-        switch self {
-        case .mistral: return "https://api.mistral.ai/v1"
-        case .openAI: return "https://api.openai.com/v1"
-        case .deepSeek: return "https://api.deepseek.com/v1"
-        case .openRouter: return "https://openrouter.ai/api/v1"
-        case .ollama: return "http://localhost:11434/v1"
-        }
-    }
-
-    var defaultModel: String {
-        switch self {
-        case .mistral: return "mistral-small-latest"
-        case .openAI: return "gpt-4o-mini"
-        case .deepSeek: return "deepseek-chat"
-        case .openRouter: return "mistralai/mistral-small-latest"
-        case .ollama: return "llama3.2"
+    private func saveSettings() async {
+        saveState = .saving
+        do {
+            try await controller.commit(settings)
+            saveState = .saved
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+            if saveState == .saved { saveState = .idle }
+        } catch {
+            saveState = .idle
+            saveError = error.localizedDescription
         }
     }
 }
@@ -283,17 +269,14 @@ private struct HotKeyRecorderRepresentable: NSViewRepresentable {
 
 @MainActor
 final class SettingsWindowController: NSWindowController {
-    private let store: SettingsStore?
     var initialSettings: AppSettings
-    private let onChange: (AppSettings) -> Void
+    private var saveViaDelegate: (@MainActor (AppSettings) async throws -> Void)?
 
-    init(store: SettingsStore?, settings: AppSettings, onChange: @escaping (AppSettings) -> Void) {
-        self.store = store
+    init(settings: AppSettings) {
         self.initialSettings = settings
-        self.onChange = onChange
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 560, height: 520),
-            styleMask: [.titled, .closable, .miniaturizable],
+            contentRect: NSRect(x: 0, y: 0, width: 580, height: 540),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
@@ -304,18 +287,16 @@ final class SettingsWindowController: NSWindowController {
         window.contentView = NSHostingView(rootView: SettingsView(controller: self))
     }
 
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) is not supported")
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    func configureSave(_ save: @escaping @MainActor (AppSettings) async throws -> Void) {
+        self.saveViaDelegate = save
     }
 
-    func commit(_ settings: AppSettings) {
-        let snapshot = settings
-        if let store {
-            Task {
-                try? await store.update { _ in snapshot }
-            }
-        }
-        onChange(settings)
+    /// Persists the settings, then applies them to the running app. Only
+    /// called when saving succeeded — failures propagate to the UI.
+    func commit(_ settings: AppSettings) async throws {
+        try await saveViaDelegate?(settings)
     }
 
     override func showWindow(_ sender: Any?) {

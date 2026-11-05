@@ -83,33 +83,27 @@ final class StatusBarController: NSObject {
         let menu = NSMenu()
         menu.autoenablesItems = false
 
-        for action in BuiltinAction.allCases {
-            let item = NSMenuItem(title: action.rawValue, action: #selector(runAction(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = action
-            menu.addItem(item)
-        }
-        if !settings.customPrompts.isEmpty {
-            menu.addItem(.separator())
-            for prompt in settings.customPrompts {
-                let item = NSMenuItem(title: prompt.name, action: #selector(runCustomPrompt(_:)), keyEquivalent: "")
-                item.target = self
-                item.representedObject = prompt
-                menu.addItem(item)
-            }
-        }
+        let pickerItem = NSMenuItem(
+            title: "Open Prompt Picker  \(settings.hotKey.description)",
+            action: #selector(openPromptPicker),
+            keyEquivalent: ""
+        )
+        pickerItem.target = self
+        menu.addItem(pickerItem)
         menu.addItem(.separator())
 
-        let hotKeyItem = NSMenuItem(title: "Hot Key: \(settings.hotKey.description)", action: nil, keyEquivalent: "")
-        menu.addItem(hotKeyItem)
-
-        let updatesItem = NSMenuItem(title: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "")
-        updatesItem.target = self
-        menu.addItem(updatesItem)
+        let editorItem = NSMenuItem(title: "Prompt Editor…", action: #selector(openPromptEditor), keyEquivalent: "")
+        editorItem.target = self
+        menu.addItem(editorItem)
 
         let settingsItem = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         settingsItem.target = self
         menu.addItem(settingsItem)
+
+        let updatesItem = NSMenuItem(title: "Check for Updates…", action: #selector(checkForUpdates), keyEquivalent: "")
+        updatesItem.target = self
+        menu.addItem(updatesItem)
+        menu.addItem(.separator())
 
         let quitItem = NSMenuItem(title: "Quit SpellCheck", action: #selector(quit), keyEquivalent: "q")
         quitItem.target = self
@@ -119,14 +113,12 @@ final class StatusBarController: NSObject {
         statusItem.menu = nil // we pop up manually so the button highlights
     }
 
-    @objc private func runAction(_ sender: NSMenuItem) {
-        guard let action = sender.representedObject as? BuiltinAction else { return }
-        Task { await appDelegate?.runAction(action) }
+    @objc private func openPromptPicker() {
+        appDelegate?.openPromptPicker()
     }
 
-    @objc private func runCustomPrompt(_ sender: NSMenuItem) {
-        guard let prompt = sender.representedObject as? CustomPrompt else { return }
-        Task { await appDelegate?.runCustomPrompt(prompt) }
+    @objc private func openPromptEditor() {
+        appDelegate?.openPromptEditor()
     }
 
     @objc private func openSettings() {

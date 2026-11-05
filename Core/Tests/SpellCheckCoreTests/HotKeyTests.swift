@@ -4,10 +4,17 @@ import Testing
 
 struct HotKeyTests {
 
-    @Test func defaultHotkeyIsOptionCommandK() {
-        #expect(HotKey.default.keyCode == 40)
-        #expect(HotKey.default.modifiers == ModifierFlags.option | ModifierFlags.command)
+    @Test func defaultHotkeyIsOptionL() {
+        #expect(HotKey.default.keyCode == 37 /* kVK_ANSI_L */)
+        #expect(HotKey.default.modifiers == ModifierFlags.option)
         #expect(HotKey.default.isUsableAsGlobalHotkey)
+        #expect(HotKey.default.description == "⌥L")
+    }
+
+    @Test func legacyDefaultIsOptionCommandK() {
+        #expect(HotKey.legacyDefault.keyCode == 40)
+        #expect(HotKey.legacyDefault.modifiers == (ModifierFlags.option | ModifierFlags.command))
+        #expect(HotKey.legacyDefault != HotKey.default)
     }
 
     @Test func noneIsNotSet() {
@@ -15,11 +22,12 @@ struct HotKeyTests {
         #expect(!HotKey.none.isUsableAsGlobalHotkey)
     }
 
-    @Test func globalHotkeyRequiresCommandOrControl() {
-        #expect(!HotKey(keyCode: 40, modifiers: ModifierFlags.option).isUsableAsGlobalHotkey)
-        #expect(!HotKey(keyCode: 40, modifiers: ModifierFlags.shift).isUsableAsGlobalHotkey)
+    @Test func optionOnlyShortcutsAreUsableGlobally() {
+        #expect(HotKey(keyCode: 37, modifiers: ModifierFlags.option).isUsableAsGlobalHotkey)
         #expect(HotKey(keyCode: 40, modifiers: ModifierFlags.command).isUsableAsGlobalHotkey)
         #expect(HotKey(keyCode: 40, modifiers: ModifierFlags.control).isUsableAsGlobalHotkey)
+        #expect(HotKey(keyCode: 40, modifiers: ModifierFlags.option | ModifierFlags.command).isUsableAsGlobalHotkey)
+        #expect(!HotKey(keyCode: 40, modifiers: 0).isUsableAsGlobalHotkey)
     }
 
     @Test func descriptionRendersSymbols() {
@@ -35,6 +43,7 @@ struct HotKeyTests {
     }
 
     @Test func keyCodeNames() {
+        #expect(KeyCodeNames.name(for: 37) == "L")
         #expect(KeyCodeNames.name(for: 40) == "K")
         #expect(KeyCodeNames.name(for: 49) == "Space")
         #expect(KeyCodeNames.name(for: 9999) == nil)

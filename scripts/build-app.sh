@@ -63,14 +63,27 @@ if [ -d "$ROOT/App/Resources/MenuBarIcons" ]; then
     cp -R "$ROOT/App/Resources/MenuBarIcons" "$APP_DIR/Contents/Resources/"
 fi
 
-if [ -n "${SIGNING_IDENTITY:-}" ]; then
-    # sign embedded frameworks first, then the bundle itself
-    for fw in "$APP_DIR/Contents/Frameworks"/*.framework; do
-        [ -e "$fw" ] || continue
-        codesign --force --options runtime --sign "$SIGNING_IDENTITY" "$fw"
-    done
-    codesign --force --options runtime --sign "$SIGNING_IDENTITY" "$APP_DIR"
-    echo "Signed $APP_DIR with: $SIGNING_IDENTITY"
+# Always sign the complete bundle. An unsigned .app only carries the
+# linker's ad-hoc signature on the raw executable, with Info.plist unbound
+# and no TeamIdentifier — macOS TCC (Accessibility) then treats every build
+# as a different app and keeps re-prompting. Signing the whole bundle binds
+# Info.plist and resources into the signature.
+#
+# With SIGNING_IDENTITY (Developer ID Application: …) the stable identity
+# survives across builds. Without it we fall back to ad-hoc signing
+# (--sign -), which makes each build self-consistent but yields a NEW
+# identity per build — re-adding the app in Accessibility settings may be
+# needed after each update until a Developer ID certificate is configured.
+IDENTITY="${SIGNING_IDENTITY:--}"
+for fw in "$APP_DIR/Contents/Frameworks"/*.framework; do
+    [ -e "$fw" ] || continue
+    codesign --force --options runtime --sign "$IDENTITY" "$fw"
+ done
+codesign --force --options runtime --sign "$IDENTITY" "$APP_DIR"
+if [ "$IDENTITY" = "-" ]; then
+    echo "Ad-hoc signed $APP_DIR (set SIGNING_IDENTITY to a Developer ID certificate for a stable identity)"
+else
+    echo "Signed $APP_DIR with: $IDENTITY"
 fi
 
 echo "Built $APP_DIR"

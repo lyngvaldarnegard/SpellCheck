@@ -1,23 +1,28 @@
 # SpellCheck — Project Handoff
 
-Last updated: 2026-11-05, after release **v0.1.4** (latest). Repo:
-https://github.com/lyngvaldarnegard/SpellCheck (default branch `main`, **not protected** on purpose).
+Last updated: 2026-11-05, after the **v2 refactor** (prompt picker, API-only,
+editable prompts, signing + updater fixes). Repo:
+https://github.com/lyngvaldarnegard/SpellCheck (default branch `main`,
+**not protected** on purpose).
 
 ## 1. What this project is
 
-**SpellCheck** is a clone of the macOS menu-bar app **FixKey** (fixkey.ai): a global
-hot key (default **⌥⌘K**) grabs the selected text — or the sentence around the caret —
-in ANY app via the Accessibility API, sends it to a correction backend (offline
-rule-based, or any OpenAI-compatible chat API), shows a confirmation window, and
-pastes the corrected text back over the original range. Supports built-in actions
-(fix typos, professional, casual, summarize, expand, translate), custom prompts,
-a model picker that fetches `GET {base}/models`, a menu-bar icon picker, and
-Sparkle-based auto-update.
+**SpellCheck** is a clone of the macOS menu-bar app **FixKey** (fixkey.ai): a
+global hot key (default **⌥L**) opens a prompt picker over the current
+selection — or the sentence around the caret — in ANY app via the
+Accessibility API. The chosen prompt is sent to any OpenAI-compatible chat
+API and the result **directly replaces** the original text (no
+review/confirmation window — that feature was removed on purpose). Prompts
+are fully editable in a separate FixKey-style Prompt Editor; Settings holds
+API configuration, shortcut and behaviour. Supports a model picker that
+fetches `GET {base}/models`, a menu-bar icon picker, launch-at-login
+(SMAppService) and Sparkle-based auto-update (still gated on a Sparkle key
+pair + a public feed, see §6).
 
-Owner/user notes: speaks Norwegian; uses the **Mistral API** (`mistral-small-latest`,
-cheap+fast); wants the app downloadable as a release zip; plans to cancel FixKey
-after testing SpellCheck. Preferred icon: **Ω + checkmark** (FixKey-style, Ω instead
-of the letter A), selectable in Settings → Menu Bar Icon.
+Owner/user notes: speaks Norwegian; uses the **Mistral API**
+(`mistral-small-latest`, cheap+fast). Preferred icon: **Ω + checkmark**.
+Existing v1 settings are migrated (⌥⌘K → ⌥L, `customPrompts` → `prompts`,
+default prompt list seeded once) without losing anything else.
 
 ## 2. Architecture
 
@@ -25,120 +30,106 @@ Three SwiftPM packages (`// swift-tools-version:6.0`, `platforms: [.macOS(.v13)]
 
 | Package | Target | Role | Tests |
 |---|---|---|---|
-| `Core/` | `SpellCheckCore` (lib) | Platform-independent: `TextScope`/`TextScopeExtractor` (UTF-16 caret offsets, sentence boundaries at `.?!….！？？`, abbreviations/decimals excluded, newlines always boundaries), `HotKey` (Carbon key codes, ⌥⌘K default, must contain Cmd/Ctrl), `PromptBuilder` (`<<<`/`>>>` markers, `BuiltinAction`), `RuleBasedCorrector` (misspellings, doubled words same-line only, missing space after punctuation, capitalization, tripled consonants), `CorrectionBackend` protocol + `ResponseCleaner`, `Settings` (Codable; custom `init(from:)` so old JSON without `menuBarIconStyle` still decodes) | 57 tests, Linux-runnable |
-| `Engine/` | `SpellCheckEngine` (lib) | `CorrectionEngine` actor (grab→backend→confirm→replace, `EngineEvent` idle/working/succeeded/failed, `isBusy` guard), `TextSource` protocol + `GrabbedText{scope, replace}`, `RuleBasedBackend`, `OpenAICompatibleBackend` (chat completions), `SettingsStore` actor (JSON in Application Support/SpellCheck/settings.json), `APIEndpoint` (string-based URL normalization — URL mutation crashed swiftc 6.0.3), `ModelCatalog` (`GET /models` + `parseModelIDs`) | 29 tests, Linux-runnable |
-| `App/` | `SpellCheck` (executable) + `SpellCheckTests` | macOS-only: `SpellCheckApp` (`@main` App + `@NSApplicationDelegateAdaptor`, `typealias AppSettings = SpellCheckCore.Settings` to avoid SwiftUI `Settings` clash, first-run notice opens Settings + alert), `HotKeyMonitor` (Carbon `RegisterEventHotKey`), `AccessibilityTextSource` (AX read `kAXValueAttribute`/`kAXSelectedTextRangeAttribute` CFRange UTF-16 / `kAXSelectedTextAttribute`; replace = select range + clipboard Cmd-V via CGEvent), `StatusBarController` (template image from `MenuBarIcons/<style>.png`, `isTemplate=true`, text-glyph fallback ⌨/⏳/✓/✗), `MenuBarIconStyle` (omega-check/omega/spellcheck/checkmark), `SettingsView` + `SettingsWindowController: NSWindowController` (provider presets — **Mistral first** — API key/base URL, Fetch models + dropdown, hotkey recorder, icon picker), `ConfirmationWindowController`, `UpdaterController` (Sparkle; auto-start only when `SUPublicEDKey` present, else friendly alert) | CI on macos-15 |
+| `Core/` | `SpellCheckCore` (lib) | Platform-independent: `TextScope`/`TextScopeExtractor` (unchanged), `HotKey` (default **⌥L**; any shortcut with ≥1 modifier is registerable — the Cmd/Ctrl requirement is gone), `PromptBuilder` (prompt-only: `messages(prompt:text:)`), `Settings` (Codable; v1→v2 migration in `init(from:)` + `migrated()`: legacy `customPrompts` → `prompts`, ⌥⌘K → ⌥L, one-time seeding of `Prompt.defaultPrompts`), `Prompt`/`PromptIcon` (editable prompt model + glyphs), `APIProvider` presets (baseURL+model always paired), `CorrectionBackend` protocol + `ResponseCleaner`. The rule-based offline corrector, `BuiltinAction`, `BackendKind` and `showConfirmation` were **removed** (v2: API-only, no confirmation) | 48 tests, Linux-runnable |
+| `Engine/` | `SpellCheckEngine` (lib) | `CorrectionEngine` actor (grab→backend→replace — **no confirm step**; `run(prompt:)` grabs itself, `run(prompt:on:)` uses text captured earlier by the picker; `GrabbedText.replace` now **throws** with typed errors incl. `targetUnavailable(appName)`), `TextSource` protocol, `OpenAICompatibleBackend` (chat completions, 120 s timeout), `SettingsStore` actor (JSON in Application Support/SpellCheck/settings.json), `APIEndpoint` (now requires http(s)), `ModelCatalog` (`GET /models` + `parseModelIDs`) | 27 tests, Linux-runnable |
+| `App/` | `SpellCheck` (executable) + `SpellCheckTests` | macOS-only: `SpellCheckApp` (@main + AppDelegate: hot key → grab immediately → show picker → run chosen prompt on the pre-grabbed text; `saveSettings` persists then applies; SMAppService launch-at-login; `ErrorPresenter` shows real alerts for every failure — hot-key registration, accessibility, API, replacement), `HotKeyMonitor` (Carbon `RegisterEventHotKey`; `start()` returns a failure reason instead of failing silently; needs **no** Input Monitoring), `AccessibilityTextSource` (layered grab: `kAXSelectedTextAttribute` on focused element → descendant BFS → `kAXValue`+`kAXSelectedTextRange` → clipboard ⌘C fallback; replacement: re-activate captured app by pid, AX write with readback verification, clipboard-paste fallback with pasteboard save/restore), `PromptPickerWindowController` (FixKey-style dark non-activating panel: search field, ↑/↓/Enter/Esc, click-to-run, empty state), `PromptEditorWindowController` + SwiftUI (two-pane dark editor, CRUD, ⌘S), `SettingsView` (API-only, presets, fetch models, ⌘S + Saved indicator), `StatusBarController` (menu: Open Prompt Picker, Prompt Editor…, Settings…, Check for Updates…, Quit), `UpdaterController` (Sparkle; active only with `SUPublicEDKey`) | CI on macos-15 |
 
 Local path dependencies are referenced by **directory name**: `package: "Core"`, `package: "Engine"`.
 
-Data flow: hot key → `engine.run(action:)` → `source.grab()` → backend → optional
-confirmation → `GrabbedText.replace` → status icon event.
+Data flow: ⌥L → `AccessibilityTextSource.grab()` (captures selection **and**
+target app pid) → prompt picker → `engine.run(prompt:on:grabbed)` →
+`OpenAICompatibleBackend` → `grabbed.replace(result)` (re-activates the
+original app, verifies the write) → status event (+ alert on failure).
 
 ## 3. Current state
 
-- **Latest release: v0.1.4** (https://github.com/lyngvaldarnegard/SpellCheck/releases/tag/v0.1.4),
-  CI + Release green. Releases: v0.1.0 (broken: no `CFBundleExecutable`, arm64-only),
-  v0.1.1 (launch fixed, universal binary), v0.1.2 (checkmark icon), v0.1.3 (Ω✓ icon +
-  icon picker), **v0.1.4 (embeds `Sparkle.framework` + rpath — fixes instant dyld
-  launch crash; version-stamped Info.plist; bundle verification in CI/release)**.
-- Each release publishes `SpellCheck-macOS.zip` + `appcast.xml`; the release workflow
-  also commits the updated `appcast.xml` to `main` (that's why `main` must stay
-  unprotected and Actions need **Read and write** permissions — already set).
-- v0.1.4 artifact verified externally (Mach-O parse): `Contents/Frameworks/Sparkle.framework`
-  present, both arch slices' `@rpath/Sparkle.framework/Versions/B/Sparkle` resolve,
-  rpath `@executable_path/../Frameworks` present, `CFBundleShortVersionString=v0.1.4`.
-- Icons: generated dependency-free by `scripts/make-icons.mjs` (own PNG encoder,
-  SVG path parser with flattened Béziers, scanline fill + distance-field stroke,
-  4x supersampling). Default glyph = MDI `omega` (Apache-2.0) fitted next to the
-  Material `spellcheck` checkmark; app icon = rounded diagonal gradient
-  `#5EB1FF→#7A5AF8` + white glyph. Outputs: `App/Resources/MenuBarIconTemplate*.png`
-  (default) + `App/Resources/MenuBarIcons/{omega-check,omega,spellcheck,checkmark}*.png`
-  + `App/Resources/AppIcon.iconset/*.png`.
-- Tests: Core 57/57, Engine 29/29 (Linux), App tests + build + `verify-bundle.sh` on macos-15 CI.
+- Latest release: **v0.1.4** (pre-v2). The v2 refactor on `main` is the next
+  release candidate; tag `v0.2.0` when the user has verified the workflow on
+  their Mac.
+- Tests: Core 48/48, Engine 27/27 (Linux), App tests + build + ad-hoc-signed
+  bundle verification on macos-15 CI. `verify-bundle.sh` now also fails when
+  the bundle is not code-signed as a whole.
+- `scripts/build-app.sh` **always signs** the bundle (frameworks first, then
+  the app): `SIGNING_IDENTITY` (Developer ID) when provided, otherwise
+  ad-hoc (`codesign --sign -`). Ad-hoc fixes the "Info.plist not bound /
+  linker-signed only" TCC problem per build but yields a NEW identity every
+  build — stable identity requires a Developer ID certificate.
 
 ## 4. Build / test / release
 
 macOS:
 ```sh
 swift test --package-path Core && swift test --package-path Engine && swift test --package-path App
-scripts/build-app.sh release                 # build/SpellCheck.app (universal, embeds frameworks, stamps VERSION)
-scripts/verify-bundle.sh build/SpellCheck.app  # MUST pass: executable, rpath, all @rpath deps, archs, resources
+scripts/build-app.sh release                 # build/SpellCheck.app (universal, embeds frameworks, stamps VERSION, always signs)
+scripts/verify-bundle.sh build/SpellCheck.app  # MUST pass: executable, rpath, @rpath deps, archs, resources, signature
 scripts/package-release.sh                   # build/SpellCheck-macOS.zip (honors SIGNING_IDENTITY, VERSION)
 ```
-Release: `git tag v0.1.5 main && git push origin v0.1.5` → `release.yml` runs tests,
-packages, verifies bundle, optional notarize (secrets `NOTARY_API_KEY`,
-`NOTARY_API_KEY_ID`, `NOTARY_ISSUER_ID`, `SIGNING_IDENTITY`), optional Sparkle signing
-(secret `SPARKLE_PRIVATE_KEY`), regenerates `appcast.xml` (commits to main), creates
-the GitHub Release. `actionlint .github/workflows/*.yml` must stay clean (note:
-`secrets` context is not allowed in step `if:` — use `env.X != ''` guards).
+Release: `git tag v0.2.0 main && git push origin v0.2.0` → `release.yml` runs
+tests, packages, verifies bundle, optional notarize (secrets `NOTARY_API_KEY`,
+`NOTARY_API_KEY_ID`, `NOTARY_ISSUER_ID`, `SIGNING_IDENTITY`), optional Sparkle
+signing (secret `SPARKLE_PRIVATE_KEY` — the workflow now extracts ONLY the
+`sparkle:edSignature` value from `sign_update` output instead of embedding the
+whole XML-attribute line), regenerates `appcast.xml` (commits to main), creates
+the GitHub Release. `actionlint .github/workflows/*.yml` must stay clean
+(`secrets` context is not allowed in step `if:` — use `env.X != ''` guards).
 
-Linux sandbox (this agent's box) — Swift 6.2 Debian12 toolchain must be re-downloaded
-every session (home is wiped): fetch
-`https://download.swift.org/swift-6.2-release/debian12/swift-6.2-RELEASE/swift-6.2-RELEASE-debian12.tar.gz`
-via Node fetch (curl is blocked), extract to `~/swift --strip-components=1`, then
-`mkdir -p ~/swift-libs && ln -sf /opt/sandbox/image/usr/lib/x86_64-linux-gnu/libncurses.so.6 ~/swift-libs/`
-(+ ncursesw), and prefix commands with
-`export LD_LIBRARY_PATH=$HOME/swift-libs:$LD_LIBRARY_PATH && export PATH=$HOME/swift/usr/bin:$PATH`.
-Only Core+Engine compile/test on Linux; App sources are checked with
-`swiftc -parse App/Sources/SpellCheck/*.swift` (parse only) — real compile happens in CI (macos-15).
-CI uses Swift **6.2** (6.0.3 had an IRGen crash on `SpellCheckApp.body`).
+Linux sandbox — Swift 6.2 Debian12 toolchain re-download per session (see git
+history of this file for the recipe). Only Core+Engine compile/test on Linux;
+App sources are checked with `swiftc -parse App/Sources/SpellCheck/*.swift`.
 
 ## 5. gh CLI / GitHub quirks (important)
 
-- The agent's `gh` token **cannot mutate**: no PR merge, no workflow_dispatch, no secret set
-  ("Mutating GitHub API calls are not allowed"). It CAN read runs/releases and push refs.
-  → Merge by pushing directly: `git push origin <branch>:main` (PR auto-marks MERGED).
-- Repo Settings → Actions → Workflow permissions must be **Read and write** (else
-  push/tag workflows run zero jobs).
+- The agent's `gh` token **cannot mutate GitHub**: no PR merge, no
+  workflow_dispatch, no secret set. It CAN read runs/releases and push refs.
+- Repo Settings → Actions → Workflow permissions must be **Read and write**.
 - Do NOT protect `main` (release workflow pushes appcast commits to it).
 - Rate limit 429 → wait ~60 s, retry once, then stop.
 
-## 6. Known issues / not-yet-done
+## 6. Known issues / not-yet-done / user actions required
 
-1. **Gatekeeper**: releases are unsigned+not notarized → user must right-click→Open
-   once per download (or `xattr -dr com.apple.quarantine .../SpellCheck.app`, or
-   System Settings → Privacy & Security → Open Anyway). Permanent fix = Developer ID
-   signing + notarization via the secrets above (workflow steps already exist).
-2. **Sparkle auto-update not yet active end-to-end**: needs a key pair. On a Mac:
-   download Sparkle release, run `bin/generate_keys` → add private key as repo secret
-   `SPARKLE_PRIVATE_KEY` (Settings → Secrets and variables → Actions); give the public
-   key to the agent to embed as `SUPublicEDKey` in `App/Info.plist` (currently absent
-   on purpose). Release workflow then signs zips and updates appcast signatures.
-   Until then: `SUEnableAutomaticChecks` is on but the updater is gated off without
-   a key; "Check for Updates…" shows an explanatory alert. Manual downloads work.
-3. **User is testing v0.1.4 on their Mac now** — if it still won't open, get the
-   Terminal output of `/Applications/SpellCheck.app/Contents/MacOS/SpellCheck` and/or
-   a Console.app crash log.
-4. Feature parity with FixKey still missing: voice dictation; polish.
+1. **Real-Mac verification of the whole workflow** (not possible from CI):
+   select text in **Notion** and **TextEdit**, press ⌥L, pick a prompt,
+   verify the result replaces the selection in the original app. Especially
+   Notion (Electron) may only work through the clipboard fallback layer.
+2. **Sparkle auto-update still not active end-to-end** — needs (a) a Sparkle
+   key pair: run `generate_keys` on a Mac, put the public key as
+   `SUPublicEDKey` in `App/Info.plist`, add the private key as repo secret
+   `SPARKLE_PRIVATE_KEY`; and (b) a feed readable **without credentials**
+   (repo is private): publish appcast + zips on a public host and point
+   `SUFeedURL` there, or make the repo public (user's call). Embedding a
+   GitHub token in the app is not acceptable. First signed build must be
+   installed manually once.
+3. **Stable signing identity**: ad-hoc signing works per build but TCC may
+   re-prompt after each update. Permanent fix = Apple Developer Program
+   ($99/yr) + `Developer ID Application` certificate as `SIGNING_IDENTITY`
+   secret (+ notarization secrets to silence Gatekeeper).
+4. FixKey feature parity still missing: voice dictation; polish.
 5. `scripts/make-icons.mjs` glyph styles are hardcoded (the SVG-arg path is unused).
 
 ## 7. Key files
 
-- `App/Info.plist` — `CFBundleExecutable=SpellCheck`, `NSPrincipalClass=NSApplication`,
+- `App/Info.plist` — `CFBundleExecutable=SpellCheck`, `NSPrincipalClass`,
   `LSUIElement`, `LSMinimumSystemVersion 13.0`, `CFBundleIconFile`,
-  `NSAccessibilityUsageDescription`, `SUFeedURL` (raw.githubusercontent …/main/appcast.xml),
-  `SUEnableAutomaticChecks`.
-- `scripts/build-app.sh` — assembles the .app: universal build (`--arch arm64 --arch x86_64`,
-  single-arch fallback), copies binary/Info.plist/PkgInfo, embeds `*.framework` from the
-  SPM bin dir into `Contents/Frameworks` (fallback: find under `App/.build`), adds
-  `@executable_path/../Frameworks` rpath if missing, stamps `VERSION` via plutil,
-  iconutil → AppIcon.icns, copies MenuBarIconTemplate + MenuBarIcons/, optional codesign
-  (frameworks first, then bundle, `--options runtime`).
-- `scripts/verify-bundle.sh` — fails CI/release if executable/rpath/@rpath-deps/archs/resources missing.
-- `scripts/package-release.sh`, `scripts/make-appcast.sh`, `scripts/make-icons.mjs`,
-  `scripts/test-{core,engine,app}.sh`.
-- `.github/workflows/ci.yml` (Core+Engine tests ubuntu+macos, App build+test+verify on macos-15),
-  `.github/workflows/release.yml` (tags `v*.*.*` + workflow_dispatch).
+  `NSAccessibilityUsageDescription`, `SUFeedURL` (raw.githubusercontent …
+  main/appcast.xml — only works once the feed is publicly reachable),
+  `SUEnableAutomaticChecks`. `SUPublicEDKey` intentionally absent until the
+  user generates keys.
+- `scripts/build-app.sh` — assembles the .app, embeds frameworks, rpath,
+  stamps VERSION, iconutil → AppIcon.icns, **always code-signs** (identity or
+  ad-hoc).
+- `scripts/verify-bundle.sh` — fails CI/release if executable/rpath/@rpath
+  deps/archs/resources missing or the bundle is unsigned.
+- `scripts/package-release.sh`, `scripts/make-appcast.sh` (takes the raw
+  EdDSA signature), `scripts/make-icons.mjs`, `scripts/test-{core,engine,app}.sh`.
+- `.github/workflows/ci.yml` (Core+Engine tests ubuntu+macos, App
+  build+test+package+verify on macos-15), `.github/workflows/release.yml`.
 - `appcast.xml` — Sparkle feed, auto-updated on main by each release.
-- `README.md` — features, Install (Option A zip / Option B build), Troubleshooting
-  ("app won't open"), Requirements, Auto-update setup for maintainers, Mistral setup,
-  Testing, Usage, Privacy.
+- `README.md` — features, install, troubleshooting (incl. Accessibility
+  re-prompting), auto-update setup, Mistral setup, usage.
 
 ## 8. Working agreements with the user
 
-- Full autonomy granted ("finish this thing if you don't need me anymore"); push to
-  `main` directly is accepted; releases via tags.
+- Full autonomy granted; push to `main` directly is accepted; releases via tags.
 - Communication language: Norwegian (user writes Norwegian; agent replies in Norwegian).
-- User wants: downloadable releases ✅, model picker with Mistral ✅, auto-update
-  (Sparkle; pending signing keys), README install guide ✅, nice icons ✅ (Ω✓ default +
-  picker), app must actually launch ✅ v0.1.4.
+- Never claim the app is tested on the user's behalf; his verdict on the real
+  Mac is ground truth over any green suite.

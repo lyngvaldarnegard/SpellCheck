@@ -25,17 +25,24 @@ public struct HotKey: Codable, Equatable, Sendable {
     /// No shortcut configured.
     public static let none = HotKey(keyCode: 0, modifiers: 0)
 
-    /// The default shortcut: Option-Command-K.
-    public static let `default` = HotKey(keyCode: 40 /* kVK_ANSI_K */, modifiers: ModifierFlags.option | ModifierFlags.command)
+    /// The default shortcut: Option-L (opens the prompt picker).
+    public static let `default` = HotKey(keyCode: 37 /* kVK_ANSI_L */, modifiers: ModifierFlags.option)
+
+    /// The pre-v2 default shortcut (Option-Command-K). Recognized during
+    /// settings migration so existing installs move to Option-L.
+    public static let legacyDefault = HotKey(keyCode: 40 /* kVK_ANSI_K */, modifiers: ModifierFlags.option | ModifierFlags.command)
 }
 
 public extension HotKey {
     var isSet: Bool { keyCode != 0 }
 
-    /// A global hotkey must include Command or Control, otherwise it would
-    /// swallow ordinary typing while the user writes.
+    /// Any shortcut with at least one modifier can be registered globally —
+    /// including Option-only combos like the default Option-L. A shortcut
+    /// without any modifier would swallow ordinary typing and is rejected.
+    /// (Registered Carbon hot keys consume the keystroke, so the character is
+    /// not typed into the target app.)
     var isUsableAsGlobalHotkey: Bool {
-        isSet && (modifiers & (ModifierFlags.command | ModifierFlags.control)) != 0
+        isSet && modifiers != 0
     }
 
     /// Human readable form, e.g. "⌥⌘K".

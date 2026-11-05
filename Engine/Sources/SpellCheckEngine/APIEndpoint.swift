@@ -9,14 +9,16 @@ public enum APIEndpoint {
 
     /// Normalizes a base URL string: trims whitespace, falls back to the
     /// default when empty, and strips trailing slashes. Returns nil when the
-    /// result is not a valid URL.
+    /// result is not a valid http(s) URL.
     public static func normalizeBaseURL(_ raw: String, fallback: String = defaultBaseURL) -> String? {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         var candidate = trimmed.isEmpty ? fallback : trimmed
         while candidate.hasSuffix("/") {
             candidate.removeLast()
         }
-        guard URL(string: candidate) != nil else { return nil }
+        guard let url = URL(string: candidate),
+              let scheme = url.scheme?.lowercased(),
+              scheme == "http" || scheme == "https" else { return nil }
         return candidate
     }
 

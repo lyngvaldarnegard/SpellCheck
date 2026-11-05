@@ -9,70 +9,81 @@ public enum EngineEvent: Sendable, Equatable {
     case failed(String)
 }
 
-/// Orchestrates one correction run: grab text, ask the backend, optionally
-/// confirm with the user, then swap the result back in. UI-agnostic so it can
-/// be unit tested with fake sources and backends.
+/// Orchestrates one AI edit: grab text, ask the backend, then swap the result
+/// back in — no confirmation step in between. UI-agnostic so it can be unit
+/// tested with fake sources and backends.
 public actor CorrectionEngine {
-    public typealias ConfirmHandler = @Sendable (String, String) async -> Bool
     public typealias EventHandler = @Sendable (EngineEvent) -> Void
 
     private let backend: any CorrectionBackend
     private let source: any TextSource
-    private let confirmHandler: ConfirmHandler
     private let eventHandler: EventHandler
 
-    public private(set) var isBusy: Bool = false
+    private var busy = false
+
+    /// True while an edit is in flight.
+    public var isBusy: Bool { busy }
 
     public init(
         backend: any CorrectionBackend,
         source: any TextSource,
-        confirm: @escaping ConfirmHandler = { _, _ in true },
         onEvent: @escaping EventHandler = { _ in }
     ) {
         self.backend = backend
         self.source = source
-        self.confirmHandler = confirm
         self.eventHandler = onEvent
     }
 
-    /// Runs one correction. Concurrent calls are ignored while a run is busy.
-    public func run(action: BuiltinAction, customPrompt: String? = nil, language: String? = nil) async {
-        guard !isBusy else { return }
-        isBusy = true
-        defer { isBusy = false }
-
-        eventHandler(.working(action == .translate ? "Translating…" : "Correcting…"))
+    /// Runs one edit with the given prompt. Concurrent calls are ignored while
+    /// a run is busy. The text is grabbed from the source when the run starts.
+    public func run(prompt: Prompt) async {
+        guard !busy else { return }
+        busy = true
+        defer { busy = false }
         do {
             let grabbed = try await source.grab()
-            let original = grabbed.scope.text
-            guard !original.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                eventHandler(.failed("There is no text to work on"))
-                return
-            }
-            let response = try await backend.correct(
-                text: original,
-                action: action,
-                customPrompt: customPrompt,
-                language: language
-            )
-            let corrected = ResponseCleaner.clean(response, input: original)
-            guard !corrected.isEmpty else {
-                eventHandler(.failed("The backend returned an empty result"))
-                return
-            }
-            guard corrected != original else {
-                eventHandler(.succeeded(corrected))
-                return
-            }
-            guard await confirmHandler(original, corrected) else {
-                eventHandler(.idle)
-                return
-            }
-            eventHandler(.working("Replacing…"))
-            let replaced = await grabbed.replace(corrected)
-            eventHandler(replaced
-                ? .succeeded(corrected)
-                : .failed("Could not replace the text in the frontmost app"))
+            try await perform(prompt: prompt, on: grabbed)
+        } catch {
+            eventHandler(.failed(Self.message(for: error)))
+        }
+    }
+
+    /// Runs one edit on text that was already grabbed (e.g. when the prompt
+    /// picker captured the selection before opening). Keeps the original
+    /// selection and target application for the whole run.
+    public func run(prompt: Prompt, on grabbed: GrabbedText) async {
+        guard !busy else { return }
+        busy = true
+        defer { busy = false }
+        do {
+            try await perform(prompt: prompt, on: grabbed)
+        } catch {
+            eventHandler(.failed(Self.message(for: error)))
+        }
+    }
+
+    private func perform(prompt: Prompt, on grabbed: GrabbedText) async throws {
+        eventHandler(.working("Running “\(prompt.name)”…"))
+        guard backend.isReady else { throw CorrectionError.notConfigured }
+        let original = grabbed.scope.text
+        guard !original.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            eventHandler(.failed("There is no text to work on"))
+            return
+        }
+        let response = try await backend.correct(text: original, prompt: prompt.prompt)
+        let corrected = ResponseCleaner.clean(response, input: original)
+        guard !corrected.isEmpty else {
+            eventHandler(.failed("The API returned an empty result"))
+            return
+        }
+        guard corrected != original else {
+            eventHandler(.succeeded(corrected))
+            return
+        }
+        eventHandler(.working("Replacing…"))
+        do {
+            try await grabbed.replace(corrected)
+            eventHandler(.succeeded(corrected))
         } catch {
             eventHandler(.failed(Self.message(for: error)))
         }
@@ -82,9 +93,9 @@ public actor CorrectionEngine {
         if let correctionError = error as? CorrectionError {
             switch correctionError {
             case .notConfigured:
-                return "The correction backend is not configured"
+                return "No API key configured — add one in SpellCheck Settings"
             case .emptyResponse:
-                return "The backend returned an empty result"
+                return "The API returned an empty result"
             case .backendFailed(let message):
                 return message
             case .cancelled:
@@ -98,7 +109,9 @@ public actor CorrectionEngine {
             case .accessDenied:
                 return "SpellCheck needs Accessibility permission (System Settings → Privacy & Security → Accessibility)"
             case .replaceFailed:
-                return "Could not replace the text in the frontmost app"
+                return "Could not replace the text in the original app"
+            case .targetUnavailable(let appName):
+                return "\(appName) can no longer be used as the target — the original selection is gone. Re-select the text and try again."
             }
         }
         return error.localizedDescription

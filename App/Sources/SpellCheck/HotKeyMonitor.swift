@@ -4,6 +4,10 @@ import SpellCheckCore
 
 /// Registers a global hot key via Carbon's `RegisterEventHotKey` and invokes
 /// a handler on the main queue when it fires.
+///
+/// Carbon hot keys need no Input Monitoring permission — they only require
+/// regular app launch. (Input Monitoring is needed by *event tap* approaches
+/// that observe all keystrokes; `RegisterEventHotKey` never does that.)
 final class HotKeyMonitor: @unchecked Sendable {
     private let hotKey: HotKey
     private let handler: @Sendable () -> Void
@@ -15,9 +19,14 @@ final class HotKeyMonitor: @unchecked Sendable {
         self.handler = handler
     }
 
-    func start() {
+    /// Registers the hot key. Returns nil on success, or a human-readable
+    /// reason when registration failed (e.g. the shortcut is already taken).
+    @discardableResult
+    func start() -> String? {
         stop()
-        guard hotKey.isUsableAsGlobalHotkey else { return }
+        guard hotKey.isUsableAsGlobalHotkey else {
+            return "No shortcut is configured — pick one in SpellCheck Settings."
+        }
 
         var eventType = EventTypeSpec(
             eventClass: OSType(kEventClassKeyboard),
@@ -38,7 +47,9 @@ final class HotKeyMonitor: @unchecked Sendable {
             selfPtr,
             &handlerRef
         )
-        guard installStatus == noErr else { return }
+        guard installStatus == noErr else {
+            return "Could not install the hot key handler (error \(installStatus))."
+        }
         eventHandlerRef = handlerRef
 
         var hotKeyID = EventHotKeyID(signature: OSType(0x5350434B) /* "SPCK" */, id: 1)
@@ -54,9 +65,13 @@ final class HotKeyMonitor: @unchecked Sendable {
         guard registerStatus == noErr else {
             if let handlerRef { RemoveEventHandler(handlerRef) }
             eventHandlerRef = nil
-            return
+            if registerStatus == OSStatus(hotKeyExistsErr) {
+                return "The shortcut \(hotKey.description) is already used by another application — pick a different one in SpellCheck Settings."
+            }
+            return "Could not register \(hotKey.description) (error \(registerStatus))."
         }
         hotKeyRef = hotKeyRefOut
+        return nil
     }
 
     func stop() {

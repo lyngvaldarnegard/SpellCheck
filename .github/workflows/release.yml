@@ -63,13 +63,29 @@ jobs:
           echo "$SPARKLE_PRIVATE_KEY" > /tmp/sparkle_private_key.pem
           curl -sL https://github.com/sparkle-project/Sparkle/releases/download/2.7.1/Sparkle-2.7.1.tar.xz -o /tmp/sparkle.tar.xz
           tar -xf /tmp/sparkle.tar.xz -C /tmp
-          SIG=$(/tmp/Sparkle-2.7.1/bin/sign_update build/SpellCheck-macOS.zip --private-key /tmp/sparkle_private_key.pem)
+          # sign_update prints XML attributes like:
+          #   sparkle:edSignature="base64..." length="123"
+          # Extract ONLY the edSignature value — embedding the whole output
+          # as the signature produces an invalid appcast.
+          SIG=$(/tmp/Sparkle-2.7.1/bin/sign_update build/SpellCheck-macOS.zip --private-key /tmp/sparkle_private_key.pem | sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p')
+          if [ -z "$SIG" ]; then
+            echo "Failed to extract Sparkle edSignature" >&2
+            exit 1
+          fi
           echo "SPARKLE_SIGNATURE=$SIG" >> "$GITHUB_ENV"
 
       - name: Generate appcast.xml
         env:
           RELEASE_VERSION: ${{ github.event.inputs.version || github.ref_name }}
-        run: scripts/make-appcast.sh "$RELEASE_VERSION" build/SpellCheck-macOS.zip "${{ env.SPARKLE_SIGNATURE }}"
+        run: |
+          scripts/make-appcast.sh "$RELEASE_VERSION" build/SpellCheck-macOS.zip "${{ env.SPARKLE_SIGNATURE }}"
+          # The appcast must carry a valid Sparkle signature when a key is
+          # configured, and never a mangled one.
+          if [ -n "${{ env.SPARKLE_SIGNATURE }}" ]; then
+            grep -q 'sparkle:edSignature="[^"]*" length=' appcast.xml || {
+              echo "appcast.xml has no valid sparkle:edSignature enclosure" >&2; exit 1; }
+          fi
+          xmllint --noout appcast.xml
 
       - name: Commit appcast.xml to main
         env:

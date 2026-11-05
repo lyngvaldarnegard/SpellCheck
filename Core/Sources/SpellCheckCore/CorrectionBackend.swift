@@ -1,20 +1,14 @@
 import Foundation
 
-/// A backend that turns input text into corrected text.
+/// A backend that turns input text into edited text via an AI API.
 public protocol CorrectionBackend: Sendable {
     /// Human readable backend name shown in the UI.
     var displayName: String { get }
     /// Whether the backend is ready to serve requests (credentials present, etc.).
     var isReady: Bool { get }
 
-    /// Corrects `text` according to `action` (or a custom prompt).
-    func correct(text: String, action: BuiltinAction, customPrompt: String?, language: String?) async throws -> String
-}
-
-public extension CorrectionBackend {
-    func correct(text: String, action: BuiltinAction, language: String? = nil) async throws -> String {
-        try await correct(text: text, action: action, customPrompt: nil, language: language)
-    }
+    /// Edits `text` according to the user prompt's instruction text.
+    func correct(text: String, prompt: String) async throws -> String
 }
 
 /// Errors a backend can throw.
@@ -32,7 +26,7 @@ public enum ResponseCleaner {
         var text = response
         // Strip a single layer of surrounding quotes if the whole answer is quoted.
         if text.count >= 2,
-           (text.hasPrefix("\"") && text.hasSuffix("\"")) || (text.hasPrefix("“") && text.hasSuffix("”")) {
+           (text.hasPrefix("\"") && text.hasSuffix("\"")) || (text.hasPrefix("\u{201c}") && text.hasSuffix("\u{201d}")) {
             text.removeFirst()
             text.removeLast()
         }

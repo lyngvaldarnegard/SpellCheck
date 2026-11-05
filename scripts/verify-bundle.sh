@@ -101,6 +101,21 @@ for res in AppIcon.icns MenuBarIconTemplate.png MenuBarIcons/omega-check.png; do
     fi
 done
 
+# The bundle must be code-signed as a whole (Info.plist bound into the
+# signature). "adhoc, linker-signed" with an unbound Info.plist makes TCC
+# treat every build as a new app.
+codesign_info="$(codesign -dv "$APP_DIR" 2>&1 || true)"
+if echo "$codesign_info" | grep -q "Signature=adhoc"; then
+    ok "bundle is code-signed (adhoc)"
+elif echo "$codesign_info" | grep -q "Signature="; then
+    ok "bundle is code-signed"
+else
+    bad "bundle is NOT code-signed (Accessibility/TCC identity will be unstable)"
+fi
+if ! codesign --verify "$APP_DIR" >/dev/null 2>&1; then
+    bad "bundle signature does not verify (codesign --verify failed)"
+fi
+
 if [ "$fail" -ne 0 ]; then
     echo "BUNDLE VERIFICATION FAILED: $APP_DIR"
     exit 1
