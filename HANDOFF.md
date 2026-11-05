@@ -158,6 +158,13 @@ replacement + misleading error, #6 prompt persistence, #7 icon resolution.
 v0.2.3 is released (CI + Release workflows green; the shipped zip was
 extracted, re-verified and smoke-launched by CI). No in-app update install
 was observed — the user should run "Check for Updates…" from v0.2.2.
+**v0.2.2 → v0.2.3 user verdict:** the workflow now works in Notion (third
+attempt) — but earlier attempts pasted model-echoed `<<<`/`>>>` input
+markers (extra text + Notion quote blocks). v0.2.4 strips exactly that echoed
+framing in `ResponseCleaner` (legitimate angle brackets untouched; 6 new
+tests) and forbids the markers in the system prompt; tracked in issue #8,
+open until the user re-tests repeatedly in Notion. v0.2.4 also enlarges the
+Ω+checkmark's checkmark for menu-bar legibility (issue #7).
 
 1. **Real-Mac verification of the whole workflow (STILL THE TOP PRIORITY)**:
    the user has v0.2.2 installed; he must confirm select-text-in-**Notion**

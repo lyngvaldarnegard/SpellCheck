@@ -191,3 +191,43 @@ struct ResponseCleanerTests {
         #expect(ResponseCleaner.clean("Line one\nLine two", input: "line one") == "Line one\nLine two")
     }
 }
+
+struct ResponseCleanerMarkerTests {
+
+    /// The input is wrapped in <<< / >>> markers (PromptBuilder); when a model
+    /// echoes them around its answer, Notion pastes <<< literally and turns a
+    /// >>> line into a quote block — the markers must be stripped.
+    @Test func stripsInlineEchoedMarkers() {
+        #expect(ResponseCleaner.clean("<<<Corrected text>>>", input: "original") == "Corrected text")
+        #expect(ResponseCleaner.clean("  <<<\nCorrected text\n>>>  ", input: "original") == "Corrected text")
+    }
+
+    @Test func stripsLineFormEchoedMarkers() {
+        #expect(ResponseCleaner.clean("<<<\nCorrected text\n>>>", input: "original") == "Corrected text")
+        let multi = ResponseCleaner.clean("<<<\nLine one\nLine two\n>>>", input: "original")
+        #expect(multi == "Line one\nLine two")
+    }
+
+    @Test func stripsMarkersEvenWhenAnswerContainsAngleBrackets() {
+        let cleaned = ResponseCleaner.clean("<<<\n5 < 10 and 10 > 5\n>>>", input: "original")
+        #expect(cleaned == "5 < 10 and 10 > 5")
+    }
+
+    /// Legitimate < and > characters must never be removed indiscriminately.
+    @Test func preservesLegitimateAngleBrackets() {
+        #expect(ResponseCleaner.clean("a < b and c > d", input: "a<b c>d") == "a < b and c > d")
+        #expect(ResponseCleaner.clean("<div>hello</div>", input: "hello") == "<div>hello</div>")
+        #expect(ResponseCleaner.clean(">>>", input: "x") == ">>>")
+        #expect(ResponseCleaner.clean("<<<", input: "x") == "<<<")
+        #expect(ResponseCleaner.clean("<<quoted>>", input: "quoted") == "<<quoted>>")
+    }
+
+    @Test func loneMarkerLinesArePreserved() {
+        // A legitimate quote-style line in the answer is NOT a marker echo.
+        #expect(ResponseCleaner.clean("> quoted line", input: "quoted") == "> quoted line")
+    }
+
+    @Test func markerOnlyAnswerBecomesEmptyAndIsRejectedUpstream() {
+        #expect(ResponseCleaner.clean("<<<\n>>>", input: "original") == "")
+    }
+}

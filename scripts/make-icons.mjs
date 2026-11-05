@@ -335,7 +335,7 @@ function writePNG(path, size, rgba) {
 // lower-right side — the classic spellcheck composition. The check must not
 // shrink the Ω or obscure its recognizable shape.
 const omegaFitted = fit(parsePath(OMEGA_D), { x: 2, y: 2, w: 20, h: 20 });
-const checkFitted = fit(parsePath(CHECK_D), { x: 12.4, y: 13.2, w: 9.2, h: 8.6 });
+const checkFitted = fit(parsePath(CHECK_D), { x: 11.2, y: 12.0, w: 11.2, h: 10.4 });
 // Knockout: an enlarged check silhouette is cut OUT of the \u03a9 (reversed
 // contours under nonzero winding), then the check is drawn inside the gap.
 // Both symbols stay readable at menu-bar size.
@@ -346,7 +346,7 @@ function scaleAbout(contours, cx, cy, k) {
 const checkBox = bbox(checkFitted);
 const checkCx = checkBox.minX + checkBox.w / 2;
 const checkCy = checkBox.minY + checkBox.h / 2;
-const checkGap = scaleAbout(checkFitted, checkCx, checkCy, 1.3);
+const checkGap = scaleAbout(checkFitted, checkCx, checkCy, 1.24);
 const OMEGA_CHECK = [
   omegaFitted.concat(checkGap.map(reverseContour)),
   checkFitted,

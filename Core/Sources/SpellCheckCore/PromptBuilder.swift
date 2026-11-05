@@ -16,6 +16,7 @@ public enum PromptBuilder {
         You are SpellCheck, a text editing assistant. The user gives you a piece of text. \
         \(instruction) \
         Output ONLY the resulting text. Do not add explanations, quotes, or commentary. \
+        Never include the input markers <<< or >>> in your output. \
         Preserve the original line breaks unless the instruction says otherwise.
         """
     }
