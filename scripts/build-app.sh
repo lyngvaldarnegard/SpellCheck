@@ -35,6 +35,11 @@ if [ -f "$ROOT/App/Resources/MenuBarIconTemplate.png" ]; then
     cp "$ROOT/App/Resources/MenuBarIconTemplate@2x.png" "$APP_DIR/Contents/Resources/" 2>/dev/null || true
 fi
 
+# selectable menu-bar icon styles (Settings -> Menu Bar Icon)
+if [ -d "$ROOT/App/Resources/MenuBarIcons" ]; then
+    cp -R "$ROOT/App/Resources/MenuBarIcons" "$APP_DIR/Contents/Resources/"
+fi
+
 if [ -n "${SIGNING_IDENTITY:-}" ]; then
     codesign --force --deep --options runtime --sign "$SIGNING_IDENTITY" "$APP_DIR"
     echo "Signed $APP_DIR with: $SIGNING_IDENTITY"

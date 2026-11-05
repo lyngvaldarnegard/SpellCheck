@@ -15,16 +15,29 @@ final class StatusBarController: NSObject {
         self.settings = settings
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         super.init()
-        if let path = Bundle.main.path(forResource: "MenuBarIconTemplate", ofType: "png"),
-           let image = NSImage(contentsOfFile: path) {
-            image.isTemplate = true
-            statusItem.button?.image = image
-        } else {
-            statusItem.button?.title = "⌨"
-        }
+        applyIcon()
         statusItem.button?.target = self
         statusItem.button?.action = #selector(toggleMenu(_:))
         buildMenu()
+    }
+
+    /// Applies new settings: swaps the menu-bar icon and rebuilds the menu
+    /// (hot key label and custom prompts may have changed).
+    func apply(_ newSettings: AppSettings) {
+        settings = newSettings
+        applyIcon()
+        buildMenu()
+    }
+
+    private func applyIcon() {
+        let style = MenuBarIconStyle.from(settingsValue: settings.menuBarIconStyle)
+        if let image = style.templateImage {
+            statusItem.button?.image = image
+            statusItem.button?.title = ""
+        } else {
+            statusItem.button?.image = nil
+            statusItem.button?.title = "⌨"
+        }
     }
 
     func handle(_ event: EngineEvent) {

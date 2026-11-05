@@ -11,9 +11,11 @@ you were using.
   the frontmost application via the Accessibility API and pastes the corrected
   text back over it.
 - **Global hot key** — default ⌥⌘K, configurable in Settings.
-- **Proper icons** — a spellcheck glyph in the menu bar (template image, so it
-  follows light/dark mode like FixKey's) and a full app icon (`AppIcon.icns`)
-  shown in the Dock, Finder and Applications folder.
+- **Proper icons** — an Ω + checkmark glyph in the menu bar (template image, so
+  it follows light/dark mode like FixKey's) and a full app icon (`AppIcon.icns`)
+  shown in the Dock, Finder and Applications folder. The menu-bar icon is
+  **selectable in Settings → Menu Bar Icon** (Ω + checkmark, Ω only, classic
+  spellcheck, or plain checkmark).
 - **Two backends**
   - *Offline (rule-based)* — fixes common misspellings, doubled words, doubled
     letters, missing spaces after punctuation, and capitalization. No account
@@ -57,7 +59,7 @@ the two ways below.
 5. Grant **Accessibility** permission: System Settings → Privacy & Security →
    **Accessibility** → enable **SpellCheck**. This is required so the app can
    read and edit text in other apps. The app will prompt you on first use.
-6. Launch SpellCheck from Applications. A keyboard icon (⌨) appears in the
+6. Launch SpellCheck from Applications. An Ω✓ icon appears in the
    menu bar — click it for **Settings…** to enter your API key.
 
 ### Option B — build from source on your Mac

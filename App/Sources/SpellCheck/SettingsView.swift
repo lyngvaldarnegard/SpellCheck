@@ -37,6 +37,27 @@ struct SettingsView: View {
                 HotKeyRecorderView(hotKey: $settings.hotKey)
             }
 
+            Section("Menu Bar Icon") {
+                Picker("Icon", selection: $settings.menuBarIconStyle) {
+                    ForEach(MenuBarIconStyle.allCases) { style in
+                        if let image = style.templateImage {
+                            HStack(spacing: 6) {
+                                Image(nsImage: image)
+                                    .resizable()
+                                    .frame(width: 18, height: 18)
+                                Text(style.displayName)
+                            }
+                            .tag(style.rawValue)
+                        } else {
+                            Text(style.displayName).tag(style.rawValue)
+                        }
+                    }
+                }
+                Text("The icon is applied immediately when you press Save.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("Behaviour") {
                 Toggle("Show confirmation before replacing", isOn: $settings.showConfirmation)
                 Toggle("Launch at login", isOn: $settings.launchAtLogin)

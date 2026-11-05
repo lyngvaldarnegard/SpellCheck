@@ -25,6 +25,28 @@ struct SettingsTests {
         #expect(BackendKind.ruleBased.rawValue == "Offline (rule-based)")
         #expect(BackendKind.openAICompatible.rawValue == "OpenAI-compatible API")
     }
+
+    @Test func menuBarIconStyleDefaultsToOmegaCheck() {
+        #expect(Settings.default.menuBarIconStyle == "omega-check")
+        #expect(Settings.defaultMenuBarIconStyle == "omega-check")
+    }
+
+    @Test func legacySettingsJSONWithoutMenuBarIconStyleStillDecodes() throws {
+        var dict = try JSONSerialization.jsonObject(with: JSONEncoder().encode(Settings.default)) as? [String: Any] ?? [:]
+        dict.removeValue(forKey: "menuBarIconStyle")
+        let data = try JSONSerialization.data(withJSONObject: dict)
+        let decoded = try JSONDecoder().decode(Settings.self, from: data)
+        #expect(decoded == Settings.default)
+        #expect(decoded.menuBarIconStyle == "omega-check")
+    }
+
+    @Test func menuBarIconStyleRoundTripsThroughJSON() throws {
+        var settings = Settings.default
+        settings.menuBarIconStyle = "spellcheck"
+        let decoded = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(settings))
+        #expect(decoded == settings)
+        #expect(decoded.menuBarIconStyle == "spellcheck")
+    }
 }
 
 struct ResponseCleanerTests {

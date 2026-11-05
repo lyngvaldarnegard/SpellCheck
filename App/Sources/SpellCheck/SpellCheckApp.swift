@@ -102,7 +102,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task { await self?.runDefaultAction() }
         }
         hotKeyMonitor?.start()
-        statusBarController?.settings = newSettings
+        statusBarController?.apply(newSettings)
         engine = CorrectionEngine(
             backend: makeBackend(from: newSettings),
             source: AccessibilityTextSource(),

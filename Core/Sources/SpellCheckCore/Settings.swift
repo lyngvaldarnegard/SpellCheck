@@ -12,6 +12,8 @@ public struct Settings: Codable, Equatable, Sendable {
     public var translationLanguage: String
     public var launchAtLogin: Bool
     public var showConfirmation: Bool
+    /// Raw value of the chosen menu-bar icon style (see `MenuBarIconStyle` in the app).
+    public var menuBarIconStyle: String
 
     public init(
         hotKey: HotKey = .default,
@@ -22,7 +24,8 @@ public struct Settings: Codable, Equatable, Sendable {
         customPrompts: [CustomPrompt] = [],
         translationLanguage: String = "German",
         launchAtLogin: Bool = false,
-        showConfirmation: Bool = true
+        showConfirmation: Bool = true,
+        menuBarIconStyle: String = Settings.defaultMenuBarIconStyle
     ) {
         self.hotKey = hotKey
         self.backend = backend
@@ -33,9 +36,27 @@ public struct Settings: Codable, Equatable, Sendable {
         self.translationLanguage = translationLanguage
         self.launchAtLogin = launchAtLogin
         self.showConfirmation = showConfirmation
+        self.menuBarIconStyle = menuBarIconStyle
+    }
+
+    /// Custom decoder so settings files written before `menuBarIconStyle`
+    /// existed still load (falling back to the default style).
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        hotKey = try c.decode(HotKey.self, forKey: .hotKey)
+        backend = try c.decode(BackendKind.self, forKey: .backend)
+        apiKey = try c.decode(String.self, forKey: .apiKey)
+        model = try c.decode(String.self, forKey: .model)
+        baseURL = try c.decode(String.self, forKey: .baseURL)
+        customPrompts = try c.decode([CustomPrompt].self, forKey: .customPrompts)
+        translationLanguage = try c.decode(String.self, forKey: .translationLanguage)
+        launchAtLogin = try c.decode(Bool.self, forKey: .launchAtLogin)
+        showConfirmation = try c.decode(Bool.self, forKey: .showConfirmation)
+        menuBarIconStyle = try c.decodeIfPresent(String.self, forKey: .menuBarIconStyle) ?? Settings.defaultMenuBarIconStyle
     }
 
     public static let `default` = Settings()
+    public static let defaultMenuBarIconStyle = "omega-check"
 }
 
 public enum BackendKind: String, Codable, CaseIterable, Sendable, Identifiable {
