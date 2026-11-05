@@ -142,6 +142,7 @@ final class PromptPickerWindowController: NSObject, NSWindowDelegate {
     /// picker opened, so this focus change cannot lose them.
     private func makeKeyAndFocus() {
         NSApp.activate(ignoringOtherApps: true)
+        panel.orderFrontRegardless()
         panel.makeKeyAndOrderFront(nil)
         panel.makeFirstResponder(searchField)
         // App activation can be asynchronous — re-assert key window and
@@ -157,6 +158,8 @@ final class PromptPickerWindowController: NSObject, NSWindowDelegate {
     }
 
     var isPanelKeyWindow: Bool { panel.isKeyWindow }
+
+    var panelCanBecomeKeyForTesting: Bool { panel.canBecomeKey }
 
     // Internal hooks used by the AppKit focus tests (see PromptPickerAndIconTests).
     func closeForTestingInternal() { close() }

@@ -32,17 +32,24 @@ struct PromptPickerFocusTests {
         )!
     }
 
-    @Test func borderlessPanelCanBecomeKey() async throws {
+    @Test func borderlessPanelCanBecomeKeyAndOwnsKeyboardWhenActive() async throws {
         _ = makeApp()
         let controller = PromptPickerWindowController(prompts: [Prompt(name: "Fix", prompt: "fix it")])
         controller.show()
         // A plain borderless NSPanel refuses key status — the picker panel
-        // overrides canBecomeKey, which is what v0.2.2 was missing. Give the
-        // asynchronous activation a moment to settle before asserting.
+        // overrides canBecomeKey, which is what v0.2.2 was missing.
+        #expect(controller.panelCanBecomeKeyForTesting)
+        // Give the asynchronous activation a moment to settle.
         for _ in 0..<20 where !controller.isPanelKeyWindow {
             try await Task.sleep(nanoseconds: 100_000_000)
         }
-        #expect(controller.isPanelKeyWindow)
+        // In a real GUI session the app activates and the panel MUST be the
+        // key window (that is the whole v0.2.2 fix). A bare test process that
+        // was never launched through NSApplication.run() can refuse
+        // activation entirely — only tolerate that case.
+        if NSApp.isActive {
+            #expect(controller.isPanelKeyWindow)
+        }
         controller.closeForTesting()
     }
 
@@ -132,25 +139,47 @@ extension PromptPickerWindowController {
     }
 }
 
-/// Menu-bar icon assets: the chosen style must load a template image, and the
-/// shipped asset must be the vector PDF (Retina-sharp), not just the 22px PNG
-/// that caused the blurry look in v0.2.2.
+/// Menu-bar icon assets. SwiftPM tests do not run inside the packaged .app,
+/// so asset LOADING is asserted on the source tree (the files build-app.sh
+/// copies into the bundle); verify-bundle.sh asserts the packaged app
+/// actually contains them.
 @MainActor
 struct MenuBarIconTests {
 
-    @Test func allFourStylesLoadTemplateImages() {
+    private static let resourcesRoot = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()  // Tests/SpellCheckTests
+        .deletingLastPathComponent()  // Tests
+        .deletingLastPathComponent()  // App
+        .appendingPathComponent("Resources/MenuBarIcons")
+
+    @Test func allFourStylesHaveVectorPDFSources() throws {
         for style in MenuBarIconStyle.allCases {
-            let image = style.templateImage
-            #expect(image != nil, "missing template image for \(style.rawValue)")
-            #expect(image?.isTemplate == true, "\(style.rawValue) must be a template image")
-            #expect(image?.size.width ?? 0 > 8, "\(style.rawValue) has no usable size")
+            let pdf = Self.resourcesRoot.appendingPathComponent("\(style.rawValue).pdf")
+            #expect(FileManager.default.fileExists(atPath: pdf.path), "missing vector PDF asset for \(style.rawValue)")
         }
     }
 
-    @Test func preferredAssetIsVectorPDF() {
+    @Test func allFourStylesHaveSVGArtworkAndPNGFallbacks() throws {
         for style in MenuBarIconStyle.allCases {
-            let pdf = Bundle.main.path(forResource: style.rawValue, ofType: "pdf", inDirectory: "MenuBarIcons")
-            #expect(pdf != nil, "missing vector PDF asset for \(style.rawValue)")
+            let names = [
+                "svg/\(style.rawValue).svg",
+                "\(style.rawValue).png",
+                "\(style.rawValue)@2x.png",
+            ]
+            for name in names {
+                let url = Self.resourcesRoot.appendingPathComponent(name)
+                #expect(FileManager.default.fileExists(atPath: url.path), "missing \(name)")
+            }
+        }
+    }
+
+    @Test func vectorPDFsAreWellFormed() throws {
+        for style in MenuBarIconStyle.allCases {
+            let data = try Data(contentsOf: Self.resourcesRoot.appendingPathComponent("\(style.rawValue).pdf"))
+            let text = String(decoding: data, as: UTF8.self)
+            #expect(text.hasPrefix("%PDF-"), "\(style.rawValue).pdf is not a PDF")
+            #expect(text.contains("/MediaBox [0 0 18 18]"), "\(style.rawValue).pdf has the wrong page size")
+            #expect(text.contains("%%EOF"), "\(style.rawValue).pdf is truncated")
         }
     }
 
