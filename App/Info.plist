@@ -30,6 +30,7 @@
 	<true/>
 	<key>SUFeedURL</key>
 	<string>https://raw.githubusercontent.com/lyngvaldarnegard/SpellCheck/main/appcast.xml</string>
-	<!-- SUPublicEDKey is added here once Sparkle keys are generated (see README). -->
+	<key>SUPublicEDKey</key>
+	<string>5Liv9cVW9ZEpf0UE065vo5mNI0hD3N+vTP0zXVpSWE8=</string>
 </dict>
 </plist>
