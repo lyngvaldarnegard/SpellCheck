@@ -82,6 +82,26 @@ it to Applications. To produce a signed build for distribution:
 SIGNING_IDENTITY="Developer ID Application: Your Name (TEAMID)" scripts/package-release.sh
 ```
 
+## Troubleshooting — "the app won't open"
+
+Releases are bundle-verified in CI (`scripts/verify-bundle.sh`), so a missing
+framework can no longer ship silently. If the app still won't start:
+
+1. Make sure you downloaded the **latest** release (v0.1.4+) and deleted any
+   older `SpellCheck.app` / zip from Downloads.
+2. Gatekeeper: right-click the app → **Open** → **Open** (or run
+   `xattr -dr com.apple.quarantine ~/Applications/SpellCheck.app` in Terminal).
+   This is needed once per download until the app is notarized.
+3. Run the binary directly in Terminal to see the real error:
+   ```sh
+   /Applications/SpellCheck.app/Contents/MacOS/SpellCheck
+   ```
+   (A missing-library error would print `dyld: Library not loaded: @rpath/...` —
+   that was fixed in v0.1.4 by embedding `Sparkle.framework`.)
+4. Check **Console.app** for a crash report named `SpellCheck`.
+5. After launch: enable **Accessibility** in System Settings → Privacy & Security,
+   then Settings opens automatically on first run.
+
 ## Requirements
 
 - macOS 13 (Ventura) or later

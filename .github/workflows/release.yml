@@ -35,6 +35,10 @@ jobs:
         run: scripts/package-release.sh
         env:
           SIGNING_IDENTITY: ${{ secrets.SIGNING_IDENTITY }}
+          VERSION: ${{ github.event.inputs.version || github.ref_name }}
+
+      - name: Verify app bundle is self-contained (no missing frameworks)
+        run: scripts/verify-bundle.sh build/SpellCheck.app
 
       - name: Notarize (optional, needs Apple Developer notarization keys)
         if: env.NOTARY_API_KEY != ''
