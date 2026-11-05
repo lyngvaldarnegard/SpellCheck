@@ -6,7 +6,14 @@ Sigurd's macOS menu-bar app that corrects text in any app: select text (or place
 
 The app was built by a different chat (Vibe Nuage Agent). The Vibe chat's job: hold the standing context and build the next-phase prompt with the prompt-bygger skill.
 
-## Status (05.11.2026 — v2 refactor landed)
+## Status (05.11.2026 — v2 SHIPPED as v0.2.2; repo now public; Sparkle live)
+
+- v2 is implemented, merged to main and released: **v0.2.2** (v0.2.0 was broken — ad-hoc + hardened runtime dyld abort — fixed in v0.2.1; v0.2.2 adds the picker X button + working Enter/arrows/Esc via the search field's `control(_:textView:doCommandBy:)` delegate; a `keyDown` override on NSSearchField never fires because the field editor eats the keys).
+- Repo **made public** (Sigurd's choice) → Sparkle feed reachable. Sigurd generated the Sparkle EdDSA key pair: public key embedded as `SUPublicEDKey`, private key is repo secret `SPARKLE_PRIVATE_KEY`. Releases sign the zip (`sparkle:edSignature` verified in appcast.xml).
+- Sigurd's v1 settings migrated automatically (API key preserved — he noticed and asked why; that's the intended `Settings.migrated()` behavior).
+- CI now: tests + package + verify the SHIPPED zip + signature-consistency checks + 8-second launch smoke test on macos-15.
+- **Pending Sigurd**: hands-on test of the full workflow (Notion + TextEdit, ⌥L picker, replacement in the original app) and a "Check for Updates…" run to confirm the auto-update install end to end. Optional: Apple Developer Program for a stable Developer ID identity + notarization.
+- The older v2 requirements below are now implemented; kept for context.
 
 - **The v2 refactor is implemented** (branch `vibe/v2-core-workflow-720d1f`, PR to main): ⌥L prompt picker (FixKey-style dark popup, search/↑↓/Enter/Esc/click/empty state), API-only (offline mode deleted), all prompts editable via a separate FixKey-style Prompt Editor, Review/confirmation window + setting removed, ⌥L accepted as a global shortcut with visible registration failures, v1 settings migrated without loss, AX grab with layered fallbacks (selected text → value+range → clipboard), target app re-activated + write verified before replacing, errors as alert windows, ⌘S + visible Saved indicator in Settings and Prompt Editor, Mistral preset pairs base URL with `mistral-small-latest`, bundles always signed (ad-hoc fallback), release workflow extracts the real `sparkle:edSignature`. Tests: Core 48/48, Engine 27/27 on Linux; App compiles/tests on macos-15 CI.
 - **Still needs Sigurd's real-Mac verification**: the full workflow in Notion and TextEdit (Notion is Electron and may only work through the clipboard fallback layer).

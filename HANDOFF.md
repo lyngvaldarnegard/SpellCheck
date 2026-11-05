@@ -1,7 +1,8 @@
 # SpellCheck — Project Handoff
 
-Last updated: 2026-11-05, after the **v2 refactor** (prompt picker, API-only,
-editable prompts, signing + updater fixes). Repo:
+Last updated: 2026-11-05, after the **v2 refactor + v0.2.2** (prompt picker,
+API-only, editable prompts, signing/launch fix, Sparkle live, picker keyboard
+fix). Repo:
 https://github.com/lyngvaldarnegard/SpellCheck (default branch `main`,
 **not protected** on purpose).
 
@@ -43,17 +44,29 @@ original app, verifies the write) → status event (+ alert on failure).
 
 ## 3. Current state
 
-- Latest release: **v0.1.4** (pre-v2). The v2 refactor on `main` is the next
-  release candidate; tag `v0.2.0` when the user has verified the workflow on
-  their Mac.
-- Tests: Core 48/48, Engine 27/27 (Linux), App tests + build + ad-hoc-signed
-  bundle verification on macos-15 CI. `verify-bundle.sh` now also fails when
-  the bundle is not code-signed as a whole.
-- `scripts/build-app.sh` **always signs** the bundle (frameworks first, then
-  the app): `SIGNING_IDENTITY` (Developer ID) when provided, otherwise
-  ad-hoc (`codesign --sign -`). Ad-hoc fixes the "Info.plist not bound /
-  linker-signed only" TCC problem per build but yields a NEW identity every
-  build — stable identity requires a Developer ID certificate.
+- Latest release: **v0.2.2** (universal, ad-hoc signed, Sparkle-signed update,
+  launch smoke-tested in CI). Release history this session: v0.2.0 (BROKEN —
+  ad-hoc + hardened runtime made dyld abort with "different Team IDs"; do not
+  install) → v0.2.1 (launch fixed) → v0.2.2 (picker keyboard fix + X button).
+- The repo is now **public** and Sparkle is **live end-to-end**: the user
+  generated an EdDSA key pair, the public key is embedded as `SUPublicEDKey`
+  in `App/Info.plist`, the private key is the repo secret
+  `SPARKLE_PRIVATE_KEY`, and every release zip is signed (`sparkle:edSignature`
+  in `appcast.xml`). Apps ≥ v0.2.1 should self-update via "Check for Updates…"
+  — the user should confirm this works when v0.2.2+ ships.
+- The user's v1 settings migrated in place (API key kept, ⌥⌘K → ⌥L, legacy
+  customPrompts → prompts, defaults seeded once).
+- Tests: Core 48/48, Engine 27/27 (Linux), App tests + build + bundled
+  signature verification + launch smoke test on macos-15 CI.
+- **Signing rules (hard-won, do not regress)**: ad-hoc builds must NOT use
+  `--options runtime` — hardened runtime turns on library validation, which
+  rejects Sparkle's Developer-ID-signed framework ("dyld: different Team
+  IDs" launch abort). `build-app.sh` re-signs all embedded components
+  innermost-first (XPC services → helper apps → helper binaries → framework
+  → bundle) preserving entitlements; `verify-bundle.sh` fails ad-hoc+runtime
+  builds and team mismatches; CI/release extract the SHIPPED zip, re-verify
+  it, and smoke-launch the app for 8s. With a real Developer ID identity
+  (`SIGNING_IDENTITY` secret) the hardened runtime is used again.
 
 ## 4. Build / test / release
 
@@ -87,33 +100,38 @@ App sources are checked with `swiftc -parse App/Sources/SpellCheck/*.swift`.
 
 ## 6. Known issues / not-yet-done / user actions required
 
-1. **Real-Mac verification of the whole workflow** (not possible from CI):
-   select text in **Notion** and **TextEdit**, press ⌥L, pick a prompt,
-   verify the result replaces the selection in the original app. Especially
-   Notion (Electron) may only work through the clipboard fallback layer.
-2. **Sparkle auto-update still not active end-to-end** — needs (a) a Sparkle
-   key pair: run `generate_keys` on a Mac, put the public key as
-   `SUPublicEDKey` in `App/Info.plist`, add the private key as repo secret
-   `SPARKLE_PRIVATE_KEY`; and (b) a feed readable **without credentials**
-   (repo is private): publish appcast + zips on a public host and point
-   `SUFeedURL` there, or make the repo public (user's call). Embedding a
-   GitHub token in the app is not acceptable. First signed build must be
-   installed manually once.
-3. **Stable signing identity**: ad-hoc signing works per build but TCC may
-   re-prompt after each update. Permanent fix = Apple Developer Program
-   ($99/yr) + `Developer ID Application` certificate as `SIGNING_IDENTITY`
-   secret (+ notarization secrets to silence Gatekeeper).
+1. **Real-Mac verification of the whole workflow (STILL THE TOP PRIORITY)**:
+   the user has v0.2.2 installed; he must confirm select-text-in-**Notion**
+   and **TextEdit** → ⌥L → picker (search, ↑/↓, Enter, click, X button, Esc)
+   → result replaces the selection in the original app. CI proves launch +
+   unit logic only; Notion (Electron) may rely on the clipboard fallback
+   layer. His verdict is ground truth.
+2. **Auto-update check**: with v0.2.1+ installed, "Check for Updates…" in the
+   menu-bar menu should find v0.2.2+ — Sparkle setup is complete (public
+   repo, SUPublicEDKey embedded, SPARKLE_PRIVATE_KEY secret, signed appcast);
+   end-to-end update install not yet observed by anyone.
+3. **Stable signing identity (optional, recommended)**: ad-hoc signing yields
+   a new identity per build → Accessibility may need re-adding per update,
+   and Gatekeeper needs right-click→Open (or `xattr -dr
+   com.apple.quarantine`) per download. Permanent fix = Apple Developer
+   Program ($99/yr) + `Developer ID Application` certificate as
+   `SIGNING_IDENTITY` secret + notarization secrets (`NOTARY_API_KEY`
+   base64 .p8, `NOTARY_API_KEY_ID`, `NOTARY_ISSUER_ID`) — workflow steps
+   already exist.
 4. FixKey feature parity still missing: voice dictation; polish.
 5. `scripts/make-icons.mjs` glyph styles are hardcoded (the SVG-arg path is unused).
+6. GitHub macOS runners occasionally fail with "job was not acquired by
+   Runner" (capacity) — that is infrastructure, not the code; re-push the tag
+   to retry (the agent token cannot `gh run rerun`).
 
 ## 7. Key files
 
 - `App/Info.plist` — `CFBundleExecutable=SpellCheck`, `NSPrincipalClass`,
   `LSUIElement`, `LSMinimumSystemVersion 13.0`, `CFBundleIconFile`,
   `NSAccessibilityUsageDescription`, `SUFeedURL` (raw.githubusercontent …
-  main/appcast.xml — only works once the feed is publicly reachable),
-  `SUEnableAutomaticChecks`. `SUPublicEDKey` intentionally absent until the
-  user generates keys.
+  main/appcast.xml — reachable now that the repo is public),
+  `SUEnableAutomaticChecks`, `SUPublicEDKey` (the user's real Sparkle public
+  key — never remove or change it, installed apps verify updates against it).
 - `scripts/build-app.sh` — assembles the .app, embeds frameworks, rpath,
   stamps VERSION, iconutil → AppIcon.icns, **always code-signs** (identity or
   ad-hoc).
