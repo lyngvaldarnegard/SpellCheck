@@ -29,7 +29,7 @@ final class PromptPickerWindowController: NSObject, NSWindowDelegate {
         self.prompts = prompts
         panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: Self.panelWidth, height: Self.panelHeight),
-            styleMask: [.borderless, .nonactivatingPanelStyle],
+            styleMask: [.borderless, NSWindow.StyleMask(rawValue: 128) /* NSNonactivatingPanelStyleMask */],
             backing: .buffered,
             defer: false
         )
@@ -79,8 +79,10 @@ final class PromptPickerWindowController: NSObject, NSWindowDelegate {
         tableView.allowsEmptySelection = true
         tableView.usesAutomaticRowHeights = false
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("prompt"))
+        // panel is 340pt wide with 12pt margins on each side
+        column.width = 316
+        column.resizingMask = []
         tableView.addTableColumn(column)
-        tableView.sizeLastColumnToFit = true
         tableView.delegate = self
         tableView.dataSource = self
         tableView.onSingleClick = { [weak self] row in self?.choose(row: row) }

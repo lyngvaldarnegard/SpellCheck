@@ -48,9 +48,10 @@ final class AccessibilityTextSource: TextSource, @unchecked Sendable {
            let selected = copyAttribute(kAXSelectedTextAttribute, from: editor, as: String.self),
            !selected.isEmpty {
             let range = selectedTextRange(of: editor)
+            nonisolated(unsafe) let capturedEditor = editor
             return GrabbedText(scope: .selection(selected)) { [weak self] newText in
                 guard let self else { throw TextSourceError.replaceFailed }
-                try await self.replaceViaSelectedText(newText, in: editor, range: range, pid: pid, appName: appName)
+                try await self.replaceViaSelectedText(newText, in: capturedEditor, range: range, pid: pid, appName: appName)
             }
         }
 
@@ -59,17 +60,18 @@ final class AccessibilityTextSource: TextSource, @unchecked Sendable {
            let document = copyAttribute(kAXValueAttribute, from: editor, as: String.self),
            !document.isEmpty,
            let range = selectedTextRange(of: editor) {
+            nonisolated(unsafe) let capturedEditor = editor
             if range.length > 0, let selected = substring(of: document, range: range), !selected.isEmpty {
                 return GrabbedText(scope: .selection(selected)) { [weak self] newText in
                     guard let self else { throw TextSourceError.replaceFailed }
-                    try await self.replaceViaRange(newText, in: editor, location: range.location, length: range.length, pid: pid, appName: appName)
+                    try await self.replaceViaRange(newText, in: capturedEditor, location: range.location, length: range.length, pid: pid, appName: appName)
                 }
             }
             let caret = range.location + range.length
             if let extraction = TextScopeExtractor.sentence(in: document, caretOffset: caret) {
                 return GrabbedText(scope: .sentence(extraction.text)) { [weak self] newText in
                     guard let self else { throw TextSourceError.replaceFailed }
-                    try await self.replaceViaRange(newText, in: editor, location: extraction.utf16Location, length: extraction.utf16Length, pid: pid, appName: appName)
+                    try await self.replaceViaRange(newText, in: capturedEditor, location: extraction.utf16Location, length: extraction.utf16Length, pid: pid, appName: appName)
                 }
             }
         }

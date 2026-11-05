@@ -65,7 +65,7 @@ final class HotKeyMonitor: @unchecked Sendable {
         guard registerStatus == noErr else {
             if let handlerRef { RemoveEventHandler(handlerRef) }
             eventHandlerRef = nil
-            if registerStatus == OSStatus(hotKeyExistsErr) {
+            if registerStatus == OSStatus(eventHotKeyExistsErr) {
                 return "The shortcut \(hotKey.description) is already used by another application — pick a different one in SpellCheck Settings."
             }
             return "Could not register \(hotKey.description) (error \(registerStatus))."

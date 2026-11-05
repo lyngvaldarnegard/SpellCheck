@@ -76,12 +76,39 @@ private struct PromptEditorView: View {
         return prompts.filter { $0.name.lowercased().contains(query) || $0.prompt.lowercased().contains(query) }
     }
 
-    private var selectedBinding: Binding<Prompt?> {
+    private var selectedPrompt: Prompt? {
+        prompts.first { $0.id == selectedID }
+    }
+
+    private var titleBinding: Binding<String> {
         Binding(
-            get: { prompts.first { $0.id == selectedID } },
-            set: { newValue in
-                guard let newValue, let index = prompts.firstIndex(where: { $0.id == newValue.id }) else { return }
-                prompts[index] = newValue
+            get: { prompts.first { $0.id == selectedID }?.name ?? "" },
+            set: { value in
+                if let index = prompts.firstIndex(where: { $0.id == selectedID }) {
+                    prompts[index].name = value
+                }
+            }
+        )
+    }
+
+    private var bodyBinding: Binding<String> {
+        Binding(
+            get: { prompts.first { $0.id == selectedID }?.prompt ?? "" },
+            set: { value in
+                if let index = prompts.firstIndex(where: { $0.id == selectedID }) {
+                    prompts[index].prompt = value
+                }
+            }
+        )
+    }
+
+    private var iconBinding: Binding<String> {
+        Binding(
+            get: { prompts.first { $0.id == selectedID }?.icon ?? PromptIcon.check.rawValue },
+            set: { value in
+                if let index = prompts.firstIndex(where: { $0.id == selectedID }) {
+                    prompts[index].icon = value
+                }
             }
         )
     }
@@ -163,14 +190,14 @@ private struct PromptEditorView: View {
 
     private var editorPane: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if let selected = selectedBinding.wrappedValue {
-                TextField("Enter prompt title", text: selectedBinding.titleBinding)
+            if selectedPrompt != nil {
+                TextField("Enter prompt title", text: titleBinding)
                     .font(.system(size: 15, weight: .semibold))
                     .padding(8)
                     .background(Color(nsColor: .controlBackgroundColor))
                     .clipShape(RoundedRectangle(cornerRadius: 8))
 
-                Picker("Icon", selection: selectedBinding.iconBinding) {
+                Picker("Icon", selection: iconBinding) {
                     ForEach(PromptIcon.allCases) { icon in
                         Text("\(icon.glyph) \(icon.displayName)").tag(icon.rawValue)
                     }
@@ -181,7 +208,7 @@ private struct PromptEditorView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Description")
                         .font(.headline)
-                    TextEditor(text: selectedBinding.bodyBinding)
+                    TextEditor(text: bodyBinding)
                         .font(.system(size: 13))
                         .scrollContentBackground(.hidden)
                         .background(Color(nsColor: .controlBackgroundColor))
@@ -237,28 +264,6 @@ private struct PromptEditorView: View {
     }
 }
 
-private extension Binding where Value == Prompt? {
-    var titleBinding: Binding<String> {
-        Binding(
-            get: { wrappedValue?.name ?? "" },
-            set: { if wrappedValue != nil { wrappedValue?.name = $0 } }
-        )
-    }
-
-    var bodyBinding: Binding<String> {
-        Binding(
-            get: { wrappedValue?.prompt ?? "" },
-            set: { if wrappedValue != nil { wrappedValue?.prompt = $0 } }
-        )
-    }
-
-    var iconBinding: Binding<String> {
-        Binding(
-            get: { wrappedValue?.icon ?? PromptIcon.check.rawValue },
-            set: { if wrappedValue != nil { wrappedValue?.icon = $0 } }
-        )
-    }
-}
 
 private struct PromptRowView: View {
     let prompt: Prompt
@@ -281,6 +286,6 @@ private struct PromptRowView: View {
                     .lineLimit(1)
             }
         }
-        .padding(vertical: 4)
+        .padding(.vertical, 4)
     }
 }

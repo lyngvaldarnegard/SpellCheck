@@ -248,7 +248,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         alert.informativeText = "To read and replace the selected text in other apps, enable SpellCheck under System Settings → Privacy & Security → Accessibility. If it is already listed, remove and re-add it after installing a new build."
         alert.addButton(withTitle: "Open System Settings")
         alert.addButton(withTitle: "Later")
-        if alert.runModal() == NSAlertFirstButtonReturn {
+        if alert.runModal() == NSApplication.ModalResponse.alertFirstButtonReturn {
             NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
         }
     }
