@@ -153,9 +153,11 @@ App sources are checked with `swiftc -parse App/Sources/SpellCheck/*.swift`.
 ## 6. Known issues / not-yet-done / user actions required
 
 The four v0.2.2 problems are tracked in GitHub issues (keep them OPEN until
-the user confirms on his Mac): the picker keyboard/focus bug, the
-capture/replacement + misleading-error bug, prompt persistence, and the icon
-resolution. See the repo's issue list.
+the user confirms on his Mac): #4 picker keyboard/focus, #5 capture/
+replacement + misleading error, #6 prompt persistence, #7 icon resolution.
+v0.2.3 is released (CI + Release workflows green; the shipped zip was
+extracted, re-verified and smoke-launched by CI). No in-app update install
+was observed — the user should run "Check for Updates…" from v0.2.2.
 
 1. **Real-Mac verification of the whole workflow (STILL THE TOP PRIORITY)**:
    the user has v0.2.2 installed; he must confirm select-text-in-**Notion**
