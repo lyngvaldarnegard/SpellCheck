@@ -140,6 +140,38 @@ struct SettingsStoreTests {
         #expect(final.apiKey == "sk-keep-me")
     }
 
+    /// The user's chosen prompt order must survive a restart (a brand-new
+    /// store on the same settings file).
+    @Test func promptOrderSurvivesRestart() async throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("spellcheck-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        var settings = Settings.default
+        settings.didSeedDefaultPrompts = true
+        settings.prompts = [
+            Prompt(name: "First", prompt: "1"),
+            Prompt(name: "Second", prompt: "2"),
+            Prompt(name: "Third", prompt: "3"),
+        ]
+        let initial = settings
+        let store = try SettingsStore(directory: dir)
+        try await store.update { _ in initial }
+
+        // Simulate the user reordering in the editor and saving.
+        try await store.update { current in
+            var next = current
+            let second = next.prompts.remove(at: 1)
+            next.prompts.insert(second, at: 0)
+            return next
+        }
+
+        let reopened = try SettingsStore(directory: dir)
+        let final = await reopened.load()
+        #expect(final.prompts.map(\.name) == ["Second", "First", "Third"])
+        #expect(final.prompts.map(\.prompt) == ["2", "1", "3"])
+    }
+
     /// A settings file that cannot be decoded (e.g. truncated by a crash
     /// during an update) must be backed up, not silently overwritten.
     @Test func corruptSettingsFileIsBackedUp() async throws {

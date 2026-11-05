@@ -191,3 +191,58 @@ struct MenuBarIconTests {
         #expect(MenuBarIconStyle.from(settingsValue: decoded.menuBarIconStyle) == .spellcheck)
     }
 }
+
+/// Prompt reordering in the Prompt Editor and the picker's use of the order.
+@MainActor
+struct PromptOrderTests {
+
+    @Test func pickerOpensOnFirstPromptInPersistedOrder() {
+        _ = NSApplication.shared
+        let prompts = [
+            Prompt(name: "First", prompt: "1"),
+            Prompt(name: "Second", prompt: "2"),
+            Prompt(name: "Third", prompt: "3"),
+        ]
+        let controller = PromptPickerWindowController(prompts: prompts)
+        controller.show()
+        #expect(controller.selectedPromptNameForTesting() == "First")
+        controller.closeForTesting()
+    }
+
+    @Test func reorderMovesPromptWithoutAlteringData() {
+        let controller = PromptEditorWindowController(
+            prompts: [
+                Prompt(name: "A", prompt: "a", icon: PromptIcon.pen.rawValue),
+                Prompt(name: "B", prompt: "b", icon: PromptIcon.check.rawValue),
+                Prompt(name: "C", prompt: "c", icon: PromptIcon.bolt.rawValue),
+            ],
+            save: { _ in },
+            onPromptsChanged: { _ in }
+        )
+        let original = controller.currentPrompts
+        let moved = controller.reorder(original, fromOffsets: IndexSet(integer: 0), toOffset: 3)
+        #expect(moved.map(\.name) == ["B", "C", "A"])
+        // Purely structural: same prompts, same data, different positions.
+        #expect(Set(moved) == Set(original))
+        #expect(moved.first { $0.name == "A" }?.prompt == "a")
+        #expect(moved.first { $0.name == "A" }?.icon == PromptIcon.pen.rawValue)
+        let movedDown = controller.reorder(moved, fromOffsets: IndexSet(integer: 2), toOffset: 0)
+        #expect(movedDown.map(\.name) == ["A", "B", "C"])
+    }
+
+    @Test func reorderPersistsThroughTheSavePath() async throws {
+        var saved: [Prompt] = []
+        let controller = PromptEditorWindowController(
+            prompts: [
+                Prompt(name: "A", prompt: "a"),
+                Prompt(name: "B", prompt: "b"),
+            ],
+            save: { saved = $0 },
+            onPromptsChanged: { _ in }
+        )
+        let reordered = controller.reorder(controller.currentPrompts, fromOffsets: IndexSet(integer: 1), toOffset: 0)
+        try await controller.persist(reordered)
+        #expect(saved.map(\.name) == ["B", "A"])
+        #expect(controller.currentPrompts.map(\.name) == ["B", "A"])
+    }
+}

@@ -98,6 +98,14 @@ original app, verifies the write) → status event (+ alert on failure).
      nonzero winding). `MenuBarIconStyle.templateImage` prefers the PDF.
      **Visual check: only rendered previews were inspected programmatically
      (ASCII/pixel diff) — NOT verified on a real Mac screen.**
+  5. **Prompt reordering (v0.2.5)**: the Prompt Editor sidebar supports
+     drag-and-drop reordering (bound `ForEach` + `onMove`; disabled while a
+     search filter is active). The drop persists immediately via the normal
+     save path — purely structural, no prompt data is touched. The picker
+     uses the same persisted order and highlights the first prompt on open;
+     ⌥L still only OPENS the picker. Tests: Core order round-trip +
+     migration, Engine order survives a store reopen, App reorder-is-
+     structural + persists + picker-opens-on-first.
 - The repo is now **public** and Sparkle is **live end-to-end**: the user
   generated an EdDSA key pair, the public key is embedded as `SUPublicEDKey`
   in `App/Info.plist`, the private key is the repo secret

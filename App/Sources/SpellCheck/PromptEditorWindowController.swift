@@ -50,6 +50,14 @@ final class PromptEditorWindowController: NSWindowController {
         onPromptsChanged(prompts)
     }
 
+    /// Reorders `prompts` by moving the given offsets. Purely structural:
+    /// no prompt title, text, icon or other setting is modified.
+    func reorder(_ prompts: [Prompt], fromOffsets: IndexSet, toOffset: Int) -> [Prompt] {
+        var next = prompts
+        next.move(fromOffsets: fromOffsets, toOffset: toOffset)
+        return next
+    }
+
     override func showWindow(_ sender: Any?) {
         // Rebuild the hosted view so the editor always shows the CURRENT
         // persisted prompts, never a snapshot from an earlier open.
@@ -79,6 +87,10 @@ private struct PromptEditorView: View {
         let query = searchText.trimmingCharacters(in: .whitespaces).lowercased()
         guard !query.isEmpty else { return prompts }
         return prompts.filter { $0.name.lowercased().contains(query) || $0.prompt.lowercased().contains(query) }
+    }
+
+    private var isSearching: Bool {
+        !searchText.trimmingCharacters(in: .whitespaces).isEmpty
     }
 
     private var selectedPrompt: Prompt? {
@@ -150,10 +162,25 @@ private struct PromptEditorView: View {
             .clipShape(RoundedRectangle(cornerRadius: 8))
 
             List(selection: $selectedID) {
-                ForEach(filtered) { prompt in
-                    PromptRowView(prompt: prompt)
-                        .tag(prompt.id)
-                        .contentShape(Rectangle())
+                if isSearching {
+                    ForEach(filtered) { prompt in
+                        PromptRowView(prompt: prompt)
+                            .tag(prompt.id)
+                            .contentShape(Rectangle())
+                    }
+                } else {
+                    // Bound ForEach + onMove: rows can be dragged up/down to
+                    // reorder; the list shows the standard insertion gap while
+                    // dragging. The new order persists immediately on drop.
+                    ForEach($prompts) { $prompt in
+                        PromptRowView(prompt: prompt)
+                            .tag(prompt.id)
+                            .contentShape(Rectangle())
+                    }
+                    .onMove { from, to in
+                        prompts = controller.reorder(prompts, fromOffsets: from, toOffset: to)
+                        Task { await savePrompts() }
+                    }
                 }
             }
             .listStyle(.sidebar)

@@ -158,6 +158,22 @@ struct SettingsTests {
         #expect(again == migrated)
     }
 
+    @Test func promptOrderRoundTripsAndSurvivesMigration() throws {
+        var settings = Settings.default
+        settings.didSeedDefaultPrompts = true
+        settings.prompts = [
+            Prompt(name: "First", prompt: "1", icon: PromptIcon.pen.rawValue),
+            Prompt(name: "Second", prompt: "2", icon: PromptIcon.check.rawValue),
+            Prompt(name: "Third", prompt: "3", icon: PromptIcon.sparkle.rawValue),
+        ]
+        let data = try JSONEncoder().encode(settings)
+        let decoded = try JSONDecoder().decode(Settings.self, from: data)
+        #expect(decoded.prompts.map(\.name) == ["First", "Second", "Third"])
+        let migrated = decoded.migrated()
+        #expect(migrated.prompts.map(\.name) == ["First", "Second", "Third"])
+        #expect(migrated.prompts.map(\.icon) == [PromptIcon.pen.rawValue, PromptIcon.check.rawValue, PromptIcon.sparkle.rawValue])
+    }
+
     @Test func migrationSeedsOnlyOnce() {
         var settings = Settings.default
         settings.prompts = [Prompt(name: "Only mine", prompt: "x")]
