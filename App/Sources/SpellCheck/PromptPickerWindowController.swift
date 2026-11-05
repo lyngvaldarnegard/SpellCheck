@@ -13,7 +13,8 @@ final class PromptPickerWindowController: NSObject, NSWindowDelegate {
 
     private let panel: NSPanel
     private let content = NSView()
-    private let searchField = PickerSearchField()
+    private let searchField = NSSearchField()
+    private let closeButton = NSButton()
     private let tableView = PickerTableView()
     private let emptyLabel = NSTextField(labelWithString: "No prompts match your search")
     private var prompts: [Prompt] = []
@@ -56,14 +57,19 @@ final class PromptPickerWindowController: NSObject, NSWindowDelegate {
 
         searchField.placeholderString = "Search prompts"
         searchField.translatesAutoresizingMaskIntoConstraints = false
-        searchField.onArrowDown = { [weak self] in self?.moveSelection(1) }
-        searchField.onArrowUp = { [weak self] in self?.moveSelection(-1) }
-        searchField.onEnter = { [weak self] in self?.runSelected() }
-        searchField.onEscape = { [weak self] in self?.cancel() }
-        searchField.target = self
-        searchField.action = #selector(searchChanged(_:))
+        searchField.delegate = self
         (searchField.cell as? NSSearchFieldCell)?.sendsSearchStringImmediately = true
         content.addSubview(searchField)
+
+        // X button (top-right): closes the picker without touching the text.
+        closeButton.translatesAutoresizingMaskIntoConstraints = false
+        closeButton.bezelStyle = .accessoryRounded
+        closeButton.isBordered = false
+        closeButton.image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "Close")
+        closeButton.contentTintColor = NSColor.secondaryLabelColor
+        closeButton.target = self
+        closeButton.action = #selector(cancelButtonClicked(_:))
+        content.addSubview(closeButton)
 
         let scrollView = NSScrollView()
         scrollView.translatesAutoresizingMaskIntoConstraints = false
@@ -98,7 +104,12 @@ final class PromptPickerWindowController: NSObject, NSWindowDelegate {
         NSLayoutConstraint.activate([
             searchField.topAnchor.constraint(equalTo: content.topAnchor, constant: 12),
             searchField.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 12),
-            searchField.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -12),
+            searchField.trailingAnchor.constraint(equalTo: closeButton.leadingAnchor, constant: -8),
+
+            closeButton.topAnchor.constraint(equalTo: content.topAnchor, constant: 10),
+            closeButton.trailingAnchor.constraint(equalTo: content.trailingAnchor, constant: -12),
+            closeButton.widthAnchor.constraint(equalToConstant: 24),
+            closeButton.heightAnchor.constraint(equalToConstant: 24),
 
             scrollView.topAnchor.constraint(equalTo: searchField.bottomAnchor, constant: 10),
             scrollView.leadingAnchor.constraint(equalTo: content.leadingAnchor, constant: 12),
@@ -142,8 +153,8 @@ final class PromptPickerWindowController: NSObject, NSWindowDelegate {
 
     // MARK: Selection
 
-    @objc private func searchChanged(_ sender: Any?) {
-        filter(searchText: searchField.stringValue)
+    @objc private func cancelButtonClicked(_ sender: Any?) {
+        cancel()
     }
 
     private func filter(searchText: String) {
@@ -192,6 +203,35 @@ final class PromptPickerWindowController: NSObject, NSWindowDelegate {
     }
 }
 // MARK: - Table plumbing
+
+extension PromptPickerWindowController: NSControlTextEditingDelegate {
+
+    /// Live filtering while typing.
+    func controlTextDidChange(_ obj: Notification) {
+        filter(searchText: searchField.stringValue)
+    }
+
+    /// The search field's field editor routes keyboard commands here — this
+    /// is the reliable way to intercept ↑/↓/Enter/Escape while editing text.
+    func control(_ control: NSControl, textView view: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        switch commandSelector {
+        case #selector(moveUp(_:)):
+            moveSelection(-1)
+            return true
+        case #selector(moveDown(_:)):
+            moveSelection(1)
+            return true
+        case #selector(insertNewline(_:)):
+            runSelected()
+            return true
+        case #selector(cancelOperation(_:)), #selector(complete(_:)):
+            cancel()
+            return true
+        default:
+            return false
+        }
+    }
+}
 
 extension PromptPickerWindowController: NSTableViewDataSource, NSTableViewDelegate {
 
@@ -269,24 +309,6 @@ final class PromptPickerRowView: NSView {
     }
 }
 
-/// Search field that forwards ↑/↓/Enter/Escape to the picker instead of
-/// treating them as text input.
-final class PickerSearchField: NSSearchField {
-    var onArrowUp: (() -> Void)?
-    var onArrowDown: (() -> Void)?
-    var onEnter: (() -> Void)?
-    var onEscape: (() -> Void)?
-
-    override func keyDown(with event: NSEvent) {
-        switch event.keyCode {
-        case 126: onArrowUp?()          // up
-        case 125: onArrowDown?()        // down
-        case 36, 76: onEnter?()         // return / keypad enter
-        case 53: onEscape?()            // esc
-        default: super.keyDown(with: event)
-        }
-    }
-}
 
 /// The picker's table: runs a prompt on a single row click.
 final class PickerTableView: NSTableView {
