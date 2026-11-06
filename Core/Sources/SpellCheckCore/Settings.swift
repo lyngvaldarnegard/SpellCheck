@@ -299,46 +299,6 @@ public extension Prompt {
             icon: PromptIcon.translate.rawValue
         ),
         Prompt(
-            name: "Pinyin to Chinese",
-            prompt: "Convert this Pinyin text into simplified Chinese characters accurately. Preserve intended meaning and avoid traditional characters. Return only the converted text.",
-            icon: PromptIcon.translate.rawValue
-        ),
-        Prompt(
-            name: "Translate to Chinese",
-            prompt: "Translate this text into simplified Chinese while preserving meaning, tone, and context. Avoid traditional characters. Return only the Chinese translation.",
-            icon: PromptIcon.translate.rawValue
-        ),
-        Prompt(
-            name: "Translate to German",
-            prompt: "Translate this text into natural German while preserving meaning, tone, and context. Return only the German translation.",
-            icon: PromptIcon.translate.rawValue
-        ),
-        Prompt(
-            name: "Translate to Spanish",
-            prompt: "Translate this text into natural Spanish while preserving meaning, tone, and context. Return only the Spanish translation.",
-            icon: PromptIcon.translate.rawValue
-        ),
-        Prompt(
-            name: "Translate to French",
-            prompt: "Translate this text into natural French while preserving meaning, tone, and context. Return only the French translation.",
-            icon: PromptIcon.translate.rawValue
-        ),
-        Prompt(
-            name: "Translate to Italian",
-            prompt: "Translate this text into natural Italian while preserving meaning, tone, and context. Return only the Italian translation.",
-            icon: PromptIcon.translate.rawValue
-        ),
-        Prompt(
-            name: "Translate to Portuguese",
-            prompt: "Translate this text into natural Portuguese while preserving meaning, tone, and context. Return only the Portuguese translation.",
-            icon: PromptIcon.translate.rawValue
-        ),
-        Prompt(
-            name: "Translate to Japanese",
-            prompt: "Translate this text into natural Japanese while preserving meaning, tone, and context. Return only the Japanese translation.",
-            icon: PromptIcon.translate.rawValue
-        ),
-        Prompt(
             name: "Translate to Esperanto",
             prompt: "Translate this text into natural Esperanto while preserving meaning, tone, and context. Keep names, numbers, dates, and links accurate. Return only the Esperanto translation.",
             icon: PromptIcon.translate.rawValue

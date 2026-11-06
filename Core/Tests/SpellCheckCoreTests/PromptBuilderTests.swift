@@ -151,12 +151,13 @@ struct PromptTests {
 
     @Test func translationPromptsAreAtTheBottomOfTheDefaults() {
         let names = Prompt.defaultPrompts.map(\.name)
-        let translationNames = names.filter { $0.hasPrefix("Translate to") || $0 == "Pinyin to Chinese" }
-        #expect(translationNames.count >= 10)
+        let expectedTranslations = ["Translate to English", "Translate to Esperanto",
+                                   "Translate to Norwegian (Bokmål)", "Translate to Norwegian (Nynorsk)"]
+        #expect(names.filter { $0.hasPrefix("Translate to") } == expectedTranslations)
         // Every translation prompt comes after every non-translation prompt.
-        if let firstTranslation = names.firstIndex(where: { $0.hasPrefix("Translate to") || $0 == "Pinyin to Chinese" }) {
+        if let firstTranslation = names.firstIndex(where: { $0.hasPrefix("Translate to") }) {
             for name in names[..<firstTranslation] {
-                #expect(name.hasPrefix("Translate to") == false && name != "Pinyin to Chinese")
+                #expect(name.hasPrefix("Translate to") == false)
             }
         }
     }
