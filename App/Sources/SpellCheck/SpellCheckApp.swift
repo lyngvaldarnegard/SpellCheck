@@ -46,6 +46,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let textSource = AccessibilityTextSource()
     private var pickerController: PromptPickerWindowController?
     private var pendingGrab: GrabbedText?
+    /// Set synchronously when a picker session starts opening, so repeated
+    /// ⌥L presses or menu clicks while the (potentially slow) text grab is
+    /// still running cannot open a second, overlapping picker session.
+    private var pickerSessionActive = false
     /// SpellCheck's own windows temporarily lowered below other apps' windows
     /// while the picker is up, so activating SpellCheck for keyboard focus
     /// does not raise Settings / Prompt Editor over the user's work.
@@ -212,24 +216,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// target app are captured before anything else happens), then open the
     /// prompt picker over it.
     func openPromptPicker() {
+        // Synchronous guard: the grab below can take a moment (Accessibility
+        // round-trips), and without this flag two rapid activations could both
+        // pass the check and open two overlapping pickers (one of them leaked
+        // with its mouse monitors still installed).
+        guard !pickerSessionActive else { return }
+        pickerSessionActive = true
         Task { @MainActor in
-            guard self.pickerController == nil else { return }
-            if let engine = self.engine, await engine.isBusy { return }
+            // The picker opens even while a correction is running — the user
+            // must always get a visible response. If a prompt is then chosen
+            // while the engine is busy, the engine reports `.busy` instead of
+            // silently dropping the request (no duplicate request or paste).
             do {
                 let grabbed = try await self.textSource.grab()
                 self.pendingGrab = grabbed
                 let picker = PromptPickerWindowController(prompts: self.settings.prompts)
                 picker.onChoose = { [weak self] prompt in
-                    self?.pickerController = nil
-                    self?.endPickerSession()
-                    self?.runPrompt(prompt)
+                    guard let self else { return }
+                    let grabbed = self.pendingGrab
+                    self.finishPickerSession()
+                    self.runPrompt(prompt, on: grabbed)
                 }
                 picker.onCancel = { [weak self] in
                     guard let self else { return }
-                    self.pickerController = nil
-                    self.endPickerSession()
                     let grabbed = self.pendingGrab
-                    self.pendingGrab = nil
+                    self.finishPickerSession()
                     // Give the keyboard back to the app the text came from.
                     if let grabbed {
                         Task { await grabbed.refocus?() }
@@ -238,22 +249,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 picker.onDismiss = { [weak self] in
                     // Clicked outside: the click itself already moved focus
                     // wherever the user clicked — do not refocus or edit.
-                    self?.pickerController = nil
-                    self?.pendingGrab = nil
-                    self?.endPickerSession()
+                    self?.finishPickerSession()
                 }
                 self.pickerController = picker
                 self.lowerOwnWindowsForPicker()
                 picker.show()
             } catch {
+                self.finishPickerSession()
                 ErrorPresenter.show(title: "SpellCheck", message: CorrectionEngine.message(for: error))
             }
         }
     }
 
-    private func runPrompt(_ prompt: Prompt) {
-        guard let engine, let grabbed = pendingGrab else { return }
+    /// Tears down the current picker session state completely — exactly one
+    /// place, so no path (choose, cancel, outside click, grab failure) can
+    /// leave a stale `pickerSessionActive` flag blocking future openings.
+    private func finishPickerSession() {
+        pickerController = nil
         pendingGrab = nil
+        pickerSessionActive = false
+        endPickerSession()
+    }
+
+    private func runPrompt(_ prompt: Prompt, on grabbed: GrabbedText?) {
+        guard let engine, let grabbed else { return }
         Task { await engine.run(prompt: prompt, on: grabbed) }
     }
 
@@ -285,11 +304,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func handle(_ event: EngineEvent) {
         statusBarController?.handle(event)
-        // Replacement failures (including uncertain readback) are menu-bar
-        // only — the user asked for no intrusive popup there and can retry
-        // manually. Real API/configuration/permission errors still alert.
-        if case .failed(let message) = event {
+        // Replacement failures (including uncertain readback) and busy
+        // rejections are menu-bar only — the user asked for no intrusive
+        // popup there and can retry manually. A busy rejection never edits
+        // anything. Real API/configuration/permission errors still alert.
+        switch event {
+        case .failed(let message):
             ErrorPresenter.show(title: "SpellCheck", message: message)
+        default:
+            break
         }
     }
 
@@ -297,11 +320,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func openSettings() {
         settingsController?.showWindow(nil)
+        settingsController?.window?.orderFrontRegardless()
         NSApp.activate(ignoringOtherApps: true)
     }
 
     func openPromptEditor() {
         promptEditorController?.showWindow(nil)
+        promptEditorController?.window?.orderFrontRegardless()
         NSApp.activate(ignoringOtherApps: true)
     }
 

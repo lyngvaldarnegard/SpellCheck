@@ -6,9 +6,28 @@ Sigurd's macOS menu-bar app that corrects text in any app: select text (or place
 
 The app was built by a different chat (Vibe Nuage Agent). The Vibe chat's job: hold the standing context and build the next-phase prompt with the prompt-bygger skill.
 
-## Status (06.11.2026 — v0.2.6 session)
+## Status (06.11.2026 — v0.2.7 session)
 
-- **v0.2.6 (this session)**: shared prompt (Settings section, sent before the
+- **v0.2.7 (this session)**: intermittent ⌥L/picker/focus investigation
+  (issue #4) — root causes found in code: the picker silently refused to open
+  while a request was in flight (busy gate) and a second run was silently
+  dropped, explaining "nothing happens" + "suddenly corrected later"; rapid
+  activations could open overlapping pickers (async guard race); unbounded
+  Accessibility calls could stall the grab for seconds. Fixes: picker opens
+  even while busy, rejected runs emit a menu-bar-only `busy` event (no popup,
+  no duplicate request/paste), synchronous picker-session flag, 0.75 s AX
+  messaging timeout + 3 s grab deadline, and a stale-operation guard (document
+  value snapshot at grab; abort if it changed before paste — a late response
+  can no longer edit a document the user moved on from). Backup model now has
+  the same Fetch-models picker as the primary (never overwrites the saved
+  value). Mistral prompt caching: stable non-sensitive `prompt_cache_key`
+  (FNV-1a of shared+selected prompt) sent only to *.mistral.ai; other
+  providers' bodies unchanged (tested). Cache hits NOT verified live — Sigurd
+  should check Admin → Usage (64-token blocks, <64-token prompts never hit,
+  cached tokens at 10% price). Tests: Core 76/76, Engine 49/49 (Linux); App
+  parse-checked, real App tests in macOS CI. Issue #12 (Loading window) is
+  solved per Sigurd. All fixes await Sigurd's real-Mac testing.
+- **v0.2.6**: shared prompt (Settings section, sent before the
   selected prompt in every request, editable default asking for result-only
   in the original language), backup model with one-retry fallback
   (408/429/5xx, timeouts, empty/unusable responses; auth errors never fall

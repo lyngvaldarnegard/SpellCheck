@@ -6,9 +6,6 @@ import SpellCheckEngine
 /// app behaviour. Prompts live in their own Prompt Editor window.
 struct SettingsView: View {
     @State private var settings: AppSettings
-    @State private var availableModels: [String] = []
-    @State private var isFetchingModels = false
-    @State private var modelsError: String?
     @State private var saveState: SaveState = .idle
     @State private var saveError: String?
     private let controller: SettingsWindowController
@@ -31,9 +28,25 @@ struct SettingsView: View {
                 SecureField("API Key", text: $settings.apiKey)
                     .textContentType(.password)
                 TextField("API Base URL", text: $settings.baseURL)
-                modelPicker
-                TextField("Backup model (optional)", text: $settings.backupModel)
-                Text("If a request to the model above fails temporarily (capacity, rate limit, server error) or returns an unusable response, the same request is retried once with this backup model. Leave empty to disable.")
+                ModelPickerField(
+                    label: "Model",
+                    placeholder: "Model (e.g. mistral-small-latest)",
+                    selection: $settings.model,
+                    apiKey: settings.apiKey,
+                    baseURL: settings.baseURL,
+                    autoSelectFirstWhenUnlisted: true
+                )
+                .id("primary-\(settings.baseURL)")
+                ModelPickerField(
+                    label: "Backup model (optional)",
+                    placeholder: "Backup model (e.g. mistral-small-latest)",
+                    selection: $settings.backupModel,
+                    apiKey: settings.apiKey,
+                    baseURL: settings.baseURL,
+                    autoSelectFirstWhenUnlisted: false
+                )
+                .id("backup-\(settings.baseURL)")
+                Text("If a request to the primary model fails temporarily (capacity, rate limit, server error) or returns an unusable response, the same request is retried once with the backup model. Leave empty to disable.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                 Text("All text editing runs through this API. Get a key at your provider's dashboard (e.g. console.mistral.ai).")
@@ -128,67 +141,9 @@ struct SettingsView: View {
         }
     }
 
-    private var modelPicker: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                if availableModels.isEmpty {
-                    TextField("Model (e.g. mistral-small-latest)", text: $settings.model)
-                } else {
-                    Picker("Model", selection: $settings.model) {
-                        ForEach(availableModels, id: \.self) { model in
-                            Text(model).tag(model)
-                        }
-                        if !availableModels.contains(settings.model) {
-                            Text("\(settings.model) (custom)").tag(settings.model)
-                        }
-                    }
-                }
-                Button(isFetchingModels ? "Fetching…" : "Fetch models") {
-                    fetchModels()
-                }
-                .disabled(isFetchingModels)
-            }
-            if let modelsError {
-                Text(modelsError)
-                    .font(.footnote)
-                    .foregroundStyle(.red)
-            } else if !availableModels.isEmpty {
-                Text("\(availableModels.count) models available from this API")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
-        }
-    }
-
     private func applyPreset(_ preset: APIProvider) {
         settings.baseURL = preset.baseURL
         settings.model = preset.defaultModel
-        availableModels = []
-        modelsError = nil
-    }
-
-    private func fetchModels() {
-        isFetchingModels = true
-        modelsError = nil
-        let apiKey = settings.apiKey
-        let baseURL = settings.baseURL
-        Task {
-            do {
-                let models = try await ModelCatalog.fetchModels(apiKey: apiKey, baseURL: baseURL)
-                await MainActor.run {
-                    availableModels = models
-                    if let first = models.first, !models.contains(settings.model) {
-                        settings.model = first
-                    }
-                    isFetchingModels = false
-                }
-            } catch {
-                await MainActor.run {
-                    modelsError = CorrectionEngine.message(for: error)
-                    isFetchingModels = false
-                }
-            }
-        }
     }
 
     private func saveSettings() async {
@@ -201,6 +156,85 @@ struct SettingsView: View {
         } catch {
             saveState = .idle
             saveError = error.localizedDescription
+        }
+    }
+}
+
+/// One model field with the full "Fetch models" experience: fetches the
+/// provider's model list (`GET {base}/models`), shows a picker once fetched,
+/// and always keeps manual entry available (when the list has not been
+/// fetched, or for a model the list does not contain).
+///
+/// Used for BOTH the primary and the backup model, so the backup gets the
+/// same fetch/select workflow as the primary. Fetching never overwrites the
+/// user's saved model unless `autoSelectFirstWhenUnlisted` is set (primary
+/// keeps its long-standing behavior; the backup never auto-changes).
+private struct ModelPickerField: View {
+    let label: String
+    let placeholder: String
+    @Binding var selection: String
+    let apiKey: String
+    let baseURL: String
+    let autoSelectFirstWhenUnlisted: Bool
+
+    @State private var availableModels: [String] = []
+    @State private var isFetching = false
+    @State private var fetchError: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                if availableModels.isEmpty {
+                    TextField(placeholder, text: $selection)
+                } else {
+                    Picker(label, selection: $selection) {
+                        ForEach(availableModels, id: \.self) { model in
+                            Text(model).tag(model)
+                        }
+                        if !selection.isEmpty && !availableModels.contains(selection) {
+                            Text("\(selection) (custom)").tag(selection)
+                        }
+                    }
+                }
+                Button(isFetching ? "Fetching…" : "Fetch models") {
+                    fetchModels()
+                }
+                .disabled(isFetching)
+            }
+            if let fetchError {
+                Text(fetchError)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+            } else if !availableModels.isEmpty {
+                Text("\(availableModels.count) models available from this API")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func fetchModels() {
+        isFetching = true
+        fetchError = nil
+        let apiKey = apiKey
+        let baseURL = baseURL
+        Task {
+            do {
+                let models = try await ModelCatalog.fetchModels(apiKey: apiKey, baseURL: baseURL)
+                await MainActor.run {
+                    availableModels = models
+                    if autoSelectFirstWhenUnlisted, let first = models.first,
+                       !models.contains(selection) {
+                        selection = first
+                    }
+                    isFetching = false
+                }
+            } catch {
+                await MainActor.run {
+                    fetchError = CorrectionEngine.message(for: error)
+                    isFetching = false
+                }
+            }
         }
     }
 }

@@ -253,12 +253,59 @@ struct CorrectionEngineTests {
         while await !engine.isBusy {
             await Task.yield()
         }
-        await engine.run(prompt: prompt) // ignored while busy
+        await engine.run(prompt: prompt) // rejected while busy
         #expect(source.grabCallCount == 1)
         #expect(await engine.isBusy == true)
+        // The rejected run is NOT silent: a busy event tells the user, and no
+        // duplicate request or replacement was started.
+        #expect(recorder.events.contains { 
+            if case .busy = $0 { return true }
+            return false
+        })
         source.finish()
         await task
         #expect(source.grabCallCount == 1)
+    }
+
+    @Test func busyEngineRejectsPreGrabbedRunWithEventAndNeverReplaces() async {
+        final class BlockingBackend: CorrectionBackend, @unchecked Sendable {
+            let displayName = "Blocking"
+            let isReady = true
+            private var release: (() -> Void)?
+            func correct(text: String, prompt: String, sharedPrompt: String) async throws -> String {
+                await withCheckedContinuation { continuation in
+                    release = { continuation.resume(returning: "Corrected text") }
+                }
+                return "Corrected text"
+            }
+            func finish() { release?() }
+        }
+        let backend = BlockingBackend()
+        let source = FakeSource()
+        let recorder = EventRecorder()
+        let engine = CorrectionEngine(backend: backend, source: source, onEvent: {
+            recorder.record($0)
+        })
+        final class Flag: @unchecked Sendable { var value = false }
+        let firstReplaced = Flag()
+        let first = GrabbedText(scope: .selection("first text")) { _ in
+            firstReplaced.value = true
+        }
+        let second = GrabbedText(scope: .selection("second text")) { newText in
+            Issue.record("a rejected busy run must never replace anything (got \(newText))")
+        }
+        let task = Task { await engine.run(prompt: prompt, on: first) }
+        while await !engine.isBusy {
+            await Task.yield()
+        }
+        await engine.run(prompt: prompt, on: second) // rejected while busy
+        #expect(recorder.events.contains {
+            if case .busy = $0 { return true }
+            return false
+        })
+        backend.finish()
+        await task.value
+        #expect(firstReplaced.value)
     }
 }
 

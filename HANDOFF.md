@@ -1,9 +1,9 @@
 # SpellCheck — Project Handoff
 
-Last updated: 2026-11-06, after the **v0.2.6** session (shared prompt,
-backup-model fallback, lenient GLM-style response parsing, outside-click
-picker dismissal, no replacement-failure popup, Ω-only icon at full scale,
-no stray Loading window). Repo:
+Last updated: 2026-11-06, after the **v0.2.7** session (intermittent
+picker/hotkey/focus investigation, busy-event feedback, AX latency bounds,
+stale-operation guard, backup-model Fetch-models UI, Mistral prompt cache key).
+Repo:
 https://github.com/lyngvaldarnegard/SpellCheck (default branch `main`,
 **not protected** on purpose).
 
@@ -54,7 +54,50 @@ original app, verifies the write) → status event (+ alert on failure).
 
 ## 3. Current state
 
-- **v0.2.6 changes (this session, all covered by new tests unless noted):**
+- **v0.2.7 changes (this session, all covered by new tests unless noted):**
+  1. **Intermittent ⌥L/menu/picker (issue #4)** — three root-cause findings:
+     (a) `openPromptPicker` gated the picker on `engine.isBusy` and silently
+     returned while a (up to 120 s) request was in flight → "nothing happens",
+     later "sudden" correction when the old request finished; (b) the busy
+     check + async grab allowed two rapid activations to both pass the guard
+     and open two overlapping pickers (one leaked with its mouse monitors
+     installed); (c) unbounded AX messaging could stall the grab for many
+     seconds in slow apps. Fixes: a synchronous `pickerSessionActive` flag
+     (set before the async work, cleared in one `finishPickerSession()` used by
+     every path), the picker now opens even while the engine is busy, and a
+     rejected second run emits a new `EngineEvent.busy` (menu-bar tooltip
+     only — no popup, no duplicate request/paste). AX calls get a 0.75 s
+     messaging timeout and the whole grab a 3 s deadline (`findEditorElement`
+     checks the deadline each step).
+  2. **Stale/delayed operations**: `CapturedTarget` now also snapshots the
+     element's `kAXValue` at grab time (`documentValue`); `ensureSelectionIntact`
+     aborts with `selectionChanged` if the document changed since the grab —
+     a late response can no longer paste into a document the user has edited
+     in the meantime. Normal refocus/reactivate for the requested workflow is
+     unchanged; the single-attempt paste and existing selection checks remain.
+  3. **Backup model selector (issue #10 UI request)**: new reusable
+     `ModelPickerField` in Settings — the backup model gets the same Fetch
+     models picker as the primary (own fetch state, manual entry kept, fetched
+     list resets on base-URL change via view `.id`). Fetching never overwrites
+     the saved backup model; the primary keeps its existing auto-select-first
+     behavior. Fallback behavior unchanged.
+  4. **Mistral prompt caching**: `PromptCacheKey` (Core) = FNV-1a 64-bit hex of
+     trimmed shared+selected prompt, prefixed `spellcheck-` — stable per
+     identical prefix, contains no content/secrets. `OpenAICompatibleBackend`
+     sends it as `prompt_cache_key` ONLY for `*.mistral.ai` base URLs (other
+     providers get a byte-identical body as before — tested).
+     `ChatCompletion.Response` now decodes `usage.prompt_tokens_details.cached_tokens`
+     (not surfaced in UI; for verification only). Real cache hits are NOT
+     verified — no authorized live API test was run; user should check
+     Mistral Admin → Usage. Docs: 64-token cache blocks, <64-token prompts
+     never hit, cached tokens billed at 10%, key raises but does not
+     guarantee hit rates.
+  5. **Diagnostics**: `AccessibilityTextSource` logs non-sensitive markers via
+     `os.Logger` (grab duration, capture layer, abort reasons). Never logs
+     API keys, prompts, selected text or responses.
+  6. Fixed a latent test bug: `await task` on a `Task` value is a no-op —
+     `await task.value` is required (new busy-rejection test).
+- **v0.2.6 changes:**
   1. **Shared prompt (issue #9)**: `Settings.sharedPrompt`, its own Settings
      section (TextEditor), sent in every request BEFORE the selected prompt
      (system message = framing + shared + instruction + output rules; user
@@ -170,7 +213,7 @@ original app, verifies the write) → status event (+ alert on failure).
   — the user should confirm this works when v0.2.2+ ships.
 - The user's v1 settings migrated in place (API key kept, ⌥⌘K → ⌥L, legacy
   customPrompts → prompts, defaults seeded once).
-- Tests: Core 68/68, Engine 43/43 (Linux, this session); macOS CI + Release green for
+- Tests: Core 76/76, Engine 49/49 (Linux, this session); App sources parse-checked on Linux (`swiftc -parse`), real App compile + tests on macos-15 CI. macOS CI + Release green for
   v0.2.5 (the shipped zip was extracted, re-verified and smoke-launched).
   NOTE 05-06.11.2026: GitHub's macOS runner pool was congested for hours
   ("job was not acquired by Runner") — several v0.2.4/v0.2.5 release
@@ -220,6 +263,16 @@ App sources are checked with `swiftc -parse App/Sources/SpellCheck/*.swift`.
 - Rate limit 429 → wait ~60 s, retry once, then stop.
 
 ## 6. Known issues / not-yet-done / user actions required
+
+**v0.2.7 intermittent-behavior investigation (issue #4)**: the three code
+weaknesses above fit the user's symptoms (silent busy-drop ≈ "nothing
+happens" + "suddenly corrected later"; overlapping picker sessions; slow AX
+grab ≈ "picker opens late/never"; late replacement reactivating the target ≈
+"taken back to the text while typing in Notion chat"). They are FIXED in code
+and covered by automated tests, but NONE of this is confirmed on the user's
+Mac — issue #4 stays open until he re-tests repeatedly (also after toggling
+permissions). The Loading-window/Space-switch report (issue #12) is considered
+solved by the user; the open-windows-raised-by-⌥L part remains low priority.
 
 The four v0.2.2 problems are tracked in GitHub issues (keep them OPEN until
 the user confirms on his Mac): #4 picker keyboard/focus, #5 capture/

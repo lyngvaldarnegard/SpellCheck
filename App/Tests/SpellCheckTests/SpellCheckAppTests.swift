@@ -41,3 +41,20 @@ struct AppWiringTests {
         }
     }
 }
+
+struct BusyEventTests {
+
+    /// A correction requested while another one is running must be reported
+    /// in the menu bar (tooltip) — never silently dropped, never a popup.
+    @Test func busyEventIsMenuBarOnlyFeedback() {
+        let controller = StatusBarController(settings: .default)
+        controller.handle(.busy("A correction is still running — the new prompt was not started. Wait for the current one to finish, then try again."))
+        #expect(controller.toolTipForTesting?.contains("still running") == true)
+    }
+
+    @Test func replaceFailedRemainsMenuBarOnlyFeedback() {
+        let controller = StatusBarController(settings: .default)
+        controller.handle(.replaceFailed("The original selection is no longer intact"))
+        #expect(controller.toolTipForTesting?.contains("no longer intact") == true)
+    }
+}

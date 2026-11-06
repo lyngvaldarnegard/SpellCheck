@@ -40,6 +40,9 @@ final class StatusBarController: NSObject {
         }
     }
 
+    /// Testing hook: the menu-bar item's current tooltip.
+    var toolTipForTesting: String? { statusItem.button?.toolTip }
+
     func handle(_ event: EngineEvent) {
         switch event {
         case .idle:
@@ -62,6 +65,12 @@ final class StatusBarController: NSObject {
             setFallbackTitle("✗")
             statusItem.button?.toolTip = message
             flash(title: "✗")
+        case .busy(let message):
+            // Menu-bar-only feedback: a second edit was requested while one is
+            // still running. Nothing was edited; the user can retry after the
+            // current correction finishes.
+            setFallbackTitle("⏳")
+            statusItem.button?.toolTip = message
         }
     }
 

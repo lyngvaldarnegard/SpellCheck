@@ -12,6 +12,10 @@ public enum EngineEvent: Sendable, Equatable {
     /// Reported in the menu bar only — the user asked for no intrusive popup
     /// here, and a retry is left to the user. Never triggers another paste.
     case replaceFailed(String)
+    /// A new edit was requested while another one is still running. The new
+    /// edit is NOT started (no duplicate request, no second paste); the user
+    /// is told why instead of the request silently disappearing.
+    case busy(String)
 }
 
 /// Orchestrates one AI edit: grab text, ask the backend, then swap the result
@@ -42,10 +46,14 @@ public actor CorrectionEngine {
         self.eventHandler = onEvent
     }
 
-    /// Runs one edit with the given prompt. Concurrent calls are ignored while
-    /// a run is busy. The text is grabbed from the source when the run starts.
+    /// Runs one edit with the given prompt. Concurrent calls are reported via
+    /// `.busy` while a run is busy. The text is grabbed from the source when
+    /// the run starts.
     public func run(prompt: Prompt) async {
-        guard !busy else { return }
+        guard !busy else {
+            eventHandler(.busy(Self.busyMessage))
+            return
+        }
         busy = true
         defer { busy = false }
         do {
@@ -60,7 +68,10 @@ public actor CorrectionEngine {
     /// picker captured the selection before opening). Keeps the original
     /// selection and target application for the whole run.
     public func run(prompt: Prompt, on grabbed: GrabbedText) async {
-        guard !busy else { return }
+        guard !busy else {
+            eventHandler(.busy(Self.busyMessage))
+            return
+        }
         busy = true
         defer { busy = false }
         do {
@@ -69,6 +80,8 @@ public actor CorrectionEngine {
             eventHandler(.failed(Self.message(for: error)))
         }
     }
+
+    private static let busyMessage = "A correction is still running — the new prompt was not started. Wait for the current one to finish, then try again."
 
     private func perform(prompt: Prompt, on grabbed: GrabbedText) async throws {
         eventHandler(.working("Running “\(prompt.name)”…"))

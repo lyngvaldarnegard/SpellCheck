@@ -1,9 +1,15 @@
 import AppKit
 import ApplicationServices
+import os
 import SpellCheckCore
 import SpellCheckEngine
 
 nonisolated(unsafe) private let axPromptKey = "AXTrustedCheckOptionPrompt"
+
+/// Non-sensitive diagnostics only: which capture layer ran, how long the grab
+/// took, and the replacement outcome. Never logs API keys, prompts, selected
+/// text or API responses.
+private let axLog = Logger(subsystem: "SpellCheck", category: "ax")
 
 /// Everything captured about the edit target before any focus change: the
 /// app (pid + name), the AX text element, the exact original text and —
@@ -16,6 +22,10 @@ private struct CapturedTarget {
     /// UTF-16 range of the grabbed text inside the element's full AXValue,
     /// when the grab came from the document value layer.
     var documentRange: CFRange?
+    /// The element's full AXValue at grab time, when readable. If it changed
+    /// by replacement time the document was edited in the meantime and the
+    /// replacement is a stale operation that must not be pasted.
+    var documentValue: String?
 }
 
 /// Grabs the current selection — or, when nothing is selected, the sentence
@@ -43,27 +53,42 @@ private struct CapturedTarget {
 /// document. The corrected text intentionally stays on the clipboard.
 final class AccessibilityTextSource: TextSource, @unchecked Sendable {
 
+    /// Per-Accessibility-call timeout (seconds). A slow or hung application
+    /// can otherwise stall every AX round-trip for the OS default (up to 30+ s
+    /// combined), which made the picker appear to "do nothing" after ⌥L.
+    private static let axMessagingTimeout: Float = 0.75
+    /// Overall budget for one grab. Grabbing happens before the picker opens,
+    /// so this bounds how long ⌥L can take to show any response.
+    private static let grabDeadline: TimeInterval = 3.0
+
     func grab() async throws -> GrabbedText {
+        let started = Date()
+        defer { axLog.info("grab finished after \(Int(-started.timeIntervalSinceNow * 1000)) ms") }
         guard AXIsProcessTrustedWithOptions([axPromptKey: false] as CFDictionary) else {
+            axLog.error("grab failed: accessibility not trusted")
             throw TextSourceError.accessDenied
         }
 
         let frontmost = await MainActor.run { NSWorkspace.shared.frontmostApplication }
         let pid = frontmost?.processIdentifier ?? 0
         let appName = frontmost?.localizedName ?? "the original app"
+        let deadline = Date().addingTimeInterval(Self.grabDeadline)
 
         let systemWide = AXUIElementCreateSystemWide()
         guard let appElement = copyAttribute(kAXFocusedApplicationAttribute, from: systemWide, as: AXUIElement.self) else {
+            axLog.error("grab failed: no focused application (pid \(pid))")
             throw TextSourceError.noText
         }
         guard let focused = copyAttribute(kAXFocusedUIElementAttribute, from: appElement, as: AXUIElement.self) else {
+            axLog.error("grab failed: no focused element in frontmost app (pid \(pid))")
             throw TextSourceError.noText
         }
 
         // Layer 1 & 2: an element that reports its selected text directly.
-        if let editor = findEditorElement(root: focused, key: kAXSelectedTextAttribute),
+        if let editor = findEditorElement(root: focused, key: kAXSelectedTextAttribute, deadline: deadline),
            let selected = copyAttribute(kAXSelectedTextAttribute, from: editor, as: String.self),
            !selected.isEmpty {
+            axLog.info("grab: selected-text layer (pid \(pid))")
             var target = CapturedTarget(
                 pid: pid,
                 appName: appName,
@@ -72,6 +97,7 @@ final class AccessibilityTextSource: TextSource, @unchecked Sendable {
                 documentRange: nil
             )
             target.documentRange = selectedTextRange(of: editor)
+            target.documentValue = copyAttribute(kAXValueAttribute, from: editor, as: String.self)
             nonisolated(unsafe) let captured = target
             return GrabbedText(scope: .selection(selected)) { [weak self] newText in
                 try await self?.replace(newText, target: captured)
@@ -81,13 +107,16 @@ final class AccessibilityTextSource: TextSource, @unchecked Sendable {
         }
 
         // Layer 3: full document value + selection range.
-        if let editor = findEditorElement(root: focused, key: kAXValueAttribute),
+        if Date() < deadline,
+           let editor = findEditorElement(root: focused, key: kAXValueAttribute, deadline: deadline),
            let document = copyAttribute(kAXValueAttribute, from: editor, as: String.self),
            !document.isEmpty,
            let range = selectedTextRange(of: editor) {
             if range.length > 0, let selected = substring(of: document, range: range), !selected.isEmpty {
+                axLog.info("grab: document-range layer (pid \(pid))")
                 var target = CapturedTarget(pid: pid, appName: appName, element: editor, originalText: selected)
                 target.documentRange = range
+                target.documentValue = document
                 nonisolated(unsafe) let captured = target
                 return GrabbedText(scope: .selection(selected)) { [weak self] newText in
                     try await self?.replace(newText, target: captured)
@@ -97,8 +126,10 @@ final class AccessibilityTextSource: TextSource, @unchecked Sendable {
             }
             let caret = range.location + range.length
             if let extraction = TextScopeExtractor.sentence(in: document, caretOffset: caret) {
+                axLog.info("grab: caret-sentence layer (pid \(pid))")
                 var target = CapturedTarget(pid: pid, appName: appName, element: editor, originalText: extraction.text)
                 target.documentRange = CFRange(location: extraction.utf16Location, length: extraction.utf16Length)
+                target.documentValue = document
                 nonisolated(unsafe) let captured = target
                 return GrabbedText(scope: .sentence(extraction.text)) { [weak self] newText in
                     try await self?.replace(newText, target: captured)
@@ -110,7 +141,8 @@ final class AccessibilityTextSource: TextSource, @unchecked Sendable {
 
         // Layer 4: clipboard fallback — the selection is copied with ⌘C and
         // the replacement is pasted over the (still intact) selection.
-        if let copied = try await copySelectionViaClipboard(pid: pid, appName: appName) {
+        if Date() < deadline, let copied = try await copySelectionViaClipboard(pid: pid, appName: appName) {
+            axLog.info("grab: clipboard fallback layer (pid \(pid))")
             let target = CapturedTarget(pid: pid, appName: appName, element: focused, originalText: copied)
             nonisolated(unsafe) let captured = target
             return GrabbedText(scope: .selection(copied)) { [weak self] newText in
@@ -125,9 +157,11 @@ final class AccessibilityTextSource: TextSource, @unchecked Sendable {
 
     // MARK: Grabbing helpers
 
-    /// Breadth-first search (depth- and size-limited) from `root` for a text
-    /// element exposing `key`. Returns `root` itself when it qualifies.
-    private func findEditorElement(root: AXUIElement, key: String) -> AXUIElement? {
+    /// Breadth-first search (depth-, size- and deadline-limited) from `root`
+    /// for a text element exposing `key`. Returns `root` itself when it
+    /// qualifies. The deadline bounds the total time spent walking large AX
+    /// trees (e.g. Electron/web apps), so opening the picker cannot stall.
+    private func findEditorElement(root: AXUIElement, key: String, deadline: Date) -> AXUIElement? {
         if hasAttribute(root, key: key) {
             return root
         }
@@ -136,6 +170,7 @@ final class AccessibilityTextSource: TextSource, @unchecked Sendable {
         let maxElements = 600
         let maxDepth = 12
         while !queue.isEmpty, visited < maxElements {
+            guard Date() < deadline else { return nil }
             let (element, depth) = queue.removeFirst()
             visited += 1
             guard depth < maxDepth else { continue }
@@ -149,9 +184,16 @@ final class AccessibilityTextSource: TextSource, @unchecked Sendable {
     }
 
     private func hasAttribute(_ element: AXUIElement, key: String) -> Bool {
+        bounded(element)
         var names: CFArray?
         guard AXUIElementCopyAttributeNames(element, &names) == .success, let names else { return false }
         return (names as NSArray).contains(key)
+    }
+
+    /// Applies the per-call messaging timeout to an element so a slow or
+    /// hung application cannot stall an Accessibility round-trip.
+    private func bounded(_ element: AXUIElement) {
+        AXUIElementSetMessagingTimeout(element, Self.axMessagingTimeout)
     }
 
     private static func sameRange(_ a: CFRange, _ b: CFRange) -> Bool {
@@ -216,6 +258,18 @@ final class AccessibilityTextSource: TextSource, @unchecked Sendable {
     private func ensureSelectionIntact(_ target: CapturedTarget) async throws {
         nonisolated(unsafe) let target = target
         let element = target.element
+
+        // Stale-operation guard: when the document's value was readable at
+        // grab time, it must still be identical now. If the user edited the
+        // document (or the app changed it) while the request was in flight,
+        // the captured selection no longer refers to the same text — pasting
+        // could modify the wrong location, so nothing is written.
+        if let capturedValue = target.documentValue,
+           let currentValue = copyAttribute(kAXValueAttribute, from: element, as: String.self),
+           currentValue != capturedValue {
+            axLog.error("replace aborted: document changed since grab")
+            throw TextSourceError.selectionChanged(target.appName)
+        }
 
         if let current = copyAttribute(kAXSelectedTextAttribute, from: element, as: String.self) {
             if current == target.originalText { return }
@@ -392,6 +446,7 @@ final class AccessibilityTextSource: TextSource, @unchecked Sendable {
     }
 
     private func copyAttribute<T>(_ attribute: String, from element: AXUIElement, as type: T.Type) -> T? {
+        bounded(element)
         var result: CFTypeRef?
         guard AXUIElementCopyAttributeValue(element, attribute as CFString, &result) == .success else { return nil }
         return result as? T

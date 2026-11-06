@@ -28,7 +28,11 @@ public struct OpenAICompatibleBackend: CorrectionBackend {
             throw CorrectionError.backendFailed("The API base URL is not valid")
         }
         let messages = PromptBuilder.messages(prompt: prompt, sharedPrompt: sharedPrompt, text: text)
-        let payload = ChatCompletion.Request(model: model.isEmpty ? APIProvider.openAI.defaultModel : model, messages: messages)
+        let payload = Self.requestPayload(
+            model: model.isEmpty ? APIProvider.openAI.defaultModel : model,
+            messages: messages,
+            promptCacheKey: Self.promptCacheKey(baseURL: baseURL, sharedPrompt: sharedPrompt, prompt: prompt)
+        )
 
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -61,6 +65,30 @@ public struct OpenAICompatibleBackend: CorrectionBackend {
                 "Check the model name and base URL in Settings, or try a different model."
             )
         }
+    }
+
+    /// Builds the chat completion request payload, including the provider's
+    /// prompt cache key when one applies.
+    static func requestPayload(
+        model: String,
+        messages: [ChatMessage],
+        promptCacheKey: String?
+    ) -> ChatCompletion.Request {
+        ChatCompletion.Request(model: model, messages: messages, promptCacheKey: promptCacheKey)
+    }
+
+    /// The prompt cache key to send, or nil when the provider does not
+    /// document support for one. Mistral's `prompt_cache_key` routes requests
+    /// with identical prefixes together to raise (not guarantee) cache-hit
+    /// rates; other OpenAI-compatible providers get an unchanged body so no
+    /// unsupported parameter is ever sent. The key is derived only from the
+    /// repeating instruction prefix (shared prompt + selected prompt) — never
+    /// from API keys, user text, or anything sensitive.
+    static func promptCacheKey(baseURL: String, sharedPrompt: String, prompt: String) -> String? {
+        guard let host = URL(string: baseURL)?.host?.lowercased(), host.hasSuffix("mistral.ai") else {
+            return nil
+        }
+        return PromptCacheKey.make(sharedPrompt: sharedPrompt, prompt: prompt)
     }
 
     /// Short, sanitized error summary from a provider error body. Never

@@ -115,11 +115,21 @@ public enum ChatCompletion {
         public var model: String
         public var messages: [ChatMessage]
         public var temperature: Double
+        /// Provider-specific prompt cache routing key (e.g. Mistral's
+        /// `prompt_cache_key`). Nil for providers without documented support —
+        /// the field is then omitted from the JSON body entirely.
+        public var promptCacheKey: String?
 
-        public init(model: String, messages: [ChatMessage], temperature: Double = 0.2) {
+        public init(model: String, messages: [ChatMessage], temperature: Double = 0.2, promptCacheKey: String? = nil) {
             self.model = model
             self.messages = messages
             self.temperature = temperature
+            self.promptCacheKey = promptCacheKey
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case model, messages, temperature
+            case promptCacheKey = "prompt_cache_key"
         }
     }
 
@@ -130,12 +140,30 @@ public enum ChatCompletion {
             }
             public var message: Message
         }
+        public struct Usage: Codable, Sendable {
+            public struct PromptTokensDetails: Codable, Sendable {
+                /// Tokens served from the provider's prompt cache (Mistral).
+                public var cached_tokens: Int?
+            }
+            public var prompt_tokens: Int?
+            public var completion_tokens: Int?
+            public var total_tokens: Int?
+            public var prompt_tokens_details: PromptTokensDetails?
+        }
         public var choices: [Choice]
+        public var usage: Usage?
 
         /// The response's text, tolerating the variations providers emit
         /// (string content, part arrays, or missing/null content).
         public var contentText: String? {
             choices.first?.message.content?.stringValue
+        }
+
+        /// How many prompt tokens were served from the provider's cache, when
+        /// the provider reports it. Nil when the provider does not report
+        /// cache usage.
+        public var cachedPromptTokens: Int? {
+            usage?.prompt_tokens_details?.cached_tokens
         }
     }
 }
