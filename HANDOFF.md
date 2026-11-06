@@ -279,6 +279,14 @@ original app, verifies the write) → status event (+ alert on failure).
 release after v0.2.10 must be tagged `v1.0.0` — not v0.2.11. All release
 notes, appcast and notes files follow the tag as usual.
 
+**v1.0.0 planned content — updated default prompts (user instruction,
+06.11.2026)**: the user will provide the new default prompt list (titles +
+text); replace `Prompt.defaultPrompts` with it. Existing installs keep
+their prompts untouched (user's explicit choice): the one-time seeding guard
+(`didSeedDefaultPrompts`) already ensures a user's list is NEVER overwritten —
+new defaults apply only to fresh installs. Do NOT ship v1.0.0 before the
+user's prompt list has been received and wired in.
+
 macOS:
 ```sh
 swift test --package-path Core && swift test --package-path Engine && swift test --package-path App

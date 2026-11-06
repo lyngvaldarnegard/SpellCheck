@@ -10,6 +10,12 @@ The app was built by a different chat (Vibe Nuage Agent). The Vibe chat's job: h
 
 - **Next release must be v1.0.0** (Sigurd's instruction): the version after
   v0.2.10 is version 1 — tag `v1.0.0`, not v0.2.11. Recorded in HANDOFF §4.
+- **v1.0.0 must ship updated default prompts** (Sigurd's instruction): he
+  will provide the new prompt list (titles + text) to replace
+  `Prompt.defaultPrompts`. Existing installs keep their own prompts
+  untouched (his explicit choice — the one-time seeding guard already
+  guarantees this; new defaults only apply to fresh installs). Do not ship
+  v1.0.0 before his list is received.
 - **All GitHub content must be in English** (Sigurd's instruction): issues,
   PRs, release notes, docs, commit messages — never Norwegian. Release notes
   v0.2.6–v0.2.10 were translated retroactively; HANDOFF working agreements
