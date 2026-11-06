@@ -1,9 +1,10 @@
 # SpellCheck — Project Handoff
 
-Last updated: 2026-11-06, after the **v0.2.8** session (cursor spinner while
-working, identical-result write-back, own windows lowered for the whole run;
-follows v0.2.7: intermittent picker/hotkey/focus fixes, backup-model
-Fetch-models UI, Mistral prompt cache key).
+Last updated: 2026-11-06, after the **v0.2.9** session (post-paste
+verification REMOVED by explicit user decision — paste-only write-back;
+follows v0.2.8: cursor spinner, identical-result write-back, own windows
+lowered for the whole run; v0.2.7: intermittent picker/hotkey/focus fixes,
+backup-model Fetch-models UI, Mistral prompt cache key).
 Repo:
 https://github.com/lyngvaldarnegard/SpellCheck (default branch `main`,
 **not protected** on purpose).
@@ -55,7 +56,19 @@ original app, verifies the write) → status event (+ alert on failure).
 
 ## 3. Current state
 
-- **v0.2.8 changes (this session, all covered by new tests unless noted):**
+- **v0.2.9 changes (this session, user decision):**
+  1. **Post-paste verification removed**: `AccessibilityTextSource.replace`
+  now pastes once and returns — no ~300 ms settle, no document read-back
+  loop, no `verify`/`expectedDocument`. Rationale (user's words): he sees the
+  result on screen; verification only added ~0.5–1 s latency and
+  notifications he never wanted. Success now means "the paste was issued
+  over the validated selection", NOT "the document was verified". The
+  PRE-paste safety checks remain (reactivate target, selection-intact check,
+  stale-document guard) — they prevent writing into the wrong place.
+  `TextSourceError.unverified` stays in the Engine API (sources may still
+  throw it) but SpellCheck's own source no longer produces it. Issue #16
+  (Fast/Thorough toggle) closed as resolved by this decision.
+- **v0.2.8 changes:**
   1. **Cursor spinner (user request)**: `WorkingIndicatorController` — a
      small dark non-activating panel with an `NSProgressIndicator` shown near
      the mouse pointer on `EngineEvent.working` and hidden on terminal events.

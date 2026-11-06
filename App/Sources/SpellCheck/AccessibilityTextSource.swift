@@ -47,10 +47,10 @@ private struct CapturedTarget {
 /// on the pasteboard and pasted over the still-intact selection with ⌘V, so
 /// the edit is a normal undoable operation in the target app. Before pasting,
 /// the target app is re-activated and the selection is verified to still be
-/// the captured one; after pasting, the document is read back when possible.
-/// The paste is issued AT MOST ONCE — a failed verification never triggers a
-/// second replacement, because the first one may already have changed the
-/// document. The corrected text intentionally stays on the clipboard.
+/// the captured one. The paste is issued AT MOST ONCE — there is no retry and
+/// (by explicit user decision) no post-paste read-back: the user sees the
+/// result on screen, so verification only added latency and notifications.
+/// The corrected text intentionally stays on the clipboard.
 final class AccessibilityTextSource: TextSource, @unchecked Sendable {
 
     /// Per-Accessibility-call timeout (seconds). A slow or hung application
@@ -238,17 +238,18 @@ final class AccessibilityTextSource: TextSource, @unchecked Sendable {
     ///   1. re-activates the original app,
     ///   2. verifies the captured selection is still intact (re-selecting the
     ///      captured range when the app allows it) — aborts otherwise,
-    ///   3. pastes ONCE over the selection,
-    ///   4. verifies the document readback when the app exposes AXValue.
+    ///   3. pastes ONCE over the selection.
+    /// No post-paste verification and no extra waits: the user sees the result
+    /// on screen (explicit decision — the read-back only added latency and
+    /// notifications he did not want). The pre-paste checks remain, because
+    /// they prevent writing into the wrong place.
     private func replace(_ newText: String, target: CapturedTarget) async throws {
         nonisolated(unsafe) let target = target
         guard await reactivate(pid: target.pid, appName: target.appName) else {
             throw TextSourceError.targetUnavailable(target.appName)
         }
         try await ensureSelectionIntact(target)
-        let documentBefore = copyAttribute(kAXValueAttribute, from: target.element, as: String.self)
         try await pasteOnce(newText, appName: target.appName)
-        try await verify(target, newText: newText, documentBefore: documentBefore)
     }
 
     /// Confirms the target's selection is still the captured text before
@@ -334,69 +335,6 @@ final class AccessibilityTextSource: TextSource, @unchecked Sendable {
         }
         // The keystroke was sent — never restore the old clipboard now, the
         // corrected text is the useful thing to keep.
-        try await Task.sleep(nanoseconds: 300_000_000)
-    }
-
-    /// Reads the document back after the paste. A matching document confirms
-    /// success; an unchanged document means nothing happened; anything else
-    /// is reported as an unverified (possibly partial) change. Never retries.
-    private func verify(_ target: CapturedTarget, newText: String, documentBefore: String?) async throws {
-        nonisolated(unsafe) let target = target
-        guard let before = documentBefore else {
-            // No document readback available — do not claim success.
-            throw TextSourceError.unverified(target.appName)
-        }
-        // Identical replacement: the desired document state is exactly the
-        // current one, so an unchanged document IS the expected outcome and
-        // confirms success (the user asked for the write-back as visible
-        // confirmation that the workflow ran).
-        if newText == target.originalText {
-            try await Task.sleep(nanoseconds: 150_000_000)
-            if let current = copyAttribute(kAXValueAttribute, from: target.element, as: String.self),
-               current == before {
-                return
-            }
-            axLog.error("identical replacement: document changed unexpectedly")
-            throw TextSourceError.unverified(target.appName)
-        }
-        var after = before
-        for _ in 0..<8 {
-            try await Task.sleep(nanoseconds: 150_000_000)
-            if let value = copyAttribute(kAXValueAttribute, from: target.element, as: String.self) {
-                after = value
-                if after != before { break }
-            } else {
-                throw TextSourceError.unverified(target.appName)
-            }
-        }
-        if after == before {
-            // The paste did not land anywhere: nothing was changed.
-            throw TextSourceError.replaceFailed
-        }
-        if expectedDocument(before, original: target.originalText, newText: newText, range: target.documentRange) == after {
-            return
-        }
-        if after.contains(newText) {
-            return
-        }
-        throw TextSourceError.unverified(target.appName)
-    }
-
-    /// The document value expected after a successful replacement.
-    private func expectedDocument(_ before: String, original: String, newText: String, range: CFRange?) -> String? {
-        let utf16 = before.utf16
-        if let range, range.location >= 0, range.location + range.length <= utf16.count {
-            let start = utf16.index(utf16.startIndex, offsetBy: range.location)
-            let end = utf16.index(start, offsetBy: range.length)
-            var result = String(decoding: utf16[utf16.startIndex..<start], as: UTF16.self)
-            result += newText
-            result += String(decoding: utf16[end...], as: UTF16.self)
-            return result
-        }
-        if let lower = before.range(of: original) {
-            return before.replacingCharacters(in: lower, with: newText)
-        }
-        return nil
     }
 
     /// Brings the original application back to the front and waits for it to

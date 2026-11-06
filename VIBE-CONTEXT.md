@@ -6,9 +6,22 @@ Sigurd's macOS menu-bar app that corrects text in any app: select text (or place
 
 The app was built by a different chat (Vibe Nuage Agent). The Vibe chat's job: hold the standing context and build the next-phase prompt with the prompt-bygger skill.
 
-## Status (06.11.2026 — v0.2.8 session)
+## Status (06.11.2026 — v0.2.9 session)
 
-- **v0.2.8 (this session)**: FixKey-style spinner (`WorkingIndicatorController`)
+- **v0.2.9 (this session)**: post-paste verification REMOVED by explicit user
+  decision ("I literally see the verification"): the write-back now pastes
+  once over the validated selection and returns immediately — no settle
+  wait, no document read-back, no unverified/replace-failed reports after a
+  paste. Saves ~0.5–1 s per correction and removes the last "could not verify"
+  noise. Pre-paste safety kept (target reactivation, selection-intact check,
+  stale-document guard) so nothing is ever written to the wrong place.
+  Success = "paste issued", not "document verified" — if a paste silently
+  fails, the menu bar still shows ✓; the corrected text is on the clipboard
+  as the manual fallback. Issue #16 closed (Fast/Thorough toggle moot);
+  issue #5's misleading-report complaint is resolved by this design change
+  (open until Sigurd confirms). Tests: Core 76/76, Engine 49/49 (Linux), App
+  parse-checked; real-Mac confirmation pending.
+- **v0.2.8**: FixKey-style spinner (`WorkingIndicatorController`)
   near the cursor while the AI is working (non-activating, click-through,
   never key; shown on `working`, hidden on terminal events, stays up on a
   `busy` rejection while the original run is in flight); identical AI results
