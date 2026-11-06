@@ -112,11 +112,14 @@ struct SettingsStoreTests {
         #expect(final.baseURL == "https://api.mistral.ai/v1")
         #expect(final.launchAtLogin == true)
         #expect(final.menuBarIconStyle == "omega")
-        #expect(final.prompts.count == 3)
-        #expect(final.prompts.map(\.name) == ["Allvit", "Juss", "Empty body"])
+        // The app update imports defaults with missing titles AFTER the
+        // user's own prompts — his three stay verbatim and first.
+        #expect(final.prompts.count == 3 + Prompt.defaultPrompts.count)
+        #expect(Array(final.prompts.map(\.name).prefix(3)) == ["Allvit", "Juss", "Empty body"])
         #expect(final.prompts[0].prompt.contains("«skatteloven»"))
         #expect(final.prompts[0].prompt.contains("Æøå"))
         #expect(final.prompts[1].icon == PromptIcon.question.rawValue)
+        #expect(final.importedDefaultPromptsVersion == Settings.defaultPromptsVersion)
     }
 
     /// An intentionally emptied prompt list must NOT be re-seeded with
@@ -129,6 +132,7 @@ struct SettingsStoreTests {
         var settings = Settings.default
         settings.apiKey = "sk-keep-me"
         settings.didSeedDefaultPrompts = true
+        settings.importedDefaultPromptsVersion = Settings.defaultPromptsVersion
         settings.prompts = []
         let migrated = settings.migrated()
         let store = try SettingsStore(directory: dir)

@@ -90,6 +90,12 @@ public struct Settings: Codable, Equatable, Sendable {
     /// Guards the one-time seeding of the default prompt list, so a user who
     /// deliberately deletes every prompt does not get them re-created.
     public var didSeedDefaultPrompts: Bool
+    /// Version of the default prompt list whose missing entries have already
+    /// been imported into this user's list (see `migrated()`). Bumping
+    /// `defaultPromptsVersion` makes the next launch import defaults whose
+    /// titles the user's list is missing — without ever replacing or
+    /// reordering the user's own prompts.
+    public var importedDefaultPromptsVersion: Int
 
     public init(
         hotKey: HotKey = .default,
@@ -101,7 +107,8 @@ public struct Settings: Codable, Equatable, Sendable {
         prompts: [Prompt] = [],
         launchAtLogin: Bool = false,
         menuBarIconStyle: String = Settings.defaultMenuBarIconStyle,
-        didSeedDefaultPrompts: Bool = false
+        didSeedDefaultPrompts: Bool = false,
+        importedDefaultPromptsVersion: Int = 0
     ) {
         self.hotKey = hotKey
         self.apiKey = apiKey
@@ -113,6 +120,7 @@ public struct Settings: Codable, Equatable, Sendable {
         self.launchAtLogin = launchAtLogin
         self.menuBarIconStyle = menuBarIconStyle
         self.didSeedDefaultPrompts = didSeedDefaultPrompts
+        self.importedDefaultPromptsVersion = importedDefaultPromptsVersion
     }
 
     public init(from decoder: Decoder) throws {
@@ -140,11 +148,12 @@ public struct Settings: Codable, Equatable, Sendable {
         launchAtLogin = try c.decodeIfPresent(Bool.self, forKey: .launchAtLogin) ?? false
         menuBarIconStyle = try c.decodeIfPresent(String.self, forKey: .menuBarIconStyle) ?? Settings.defaultMenuBarIconStyle
         didSeedDefaultPrompts = try c.decodeIfPresent(Bool.self, forKey: .didSeedDefaultPrompts) ?? false
+        importedDefaultPromptsVersion = try c.decodeIfPresent(Int.self, forKey: .importedDefaultPromptsVersion) ?? 0
     }
 
     private enum CodingKeys: String, CodingKey {
         case hotKey, apiKey, model, backupModel, baseURL, sharedPrompt, prompts
-        case launchAtLogin, menuBarIconStyle, didSeedDefaultPrompts
+        case launchAtLogin, menuBarIconStyle, didSeedDefaultPrompts, importedDefaultPromptsVersion
     }
 
     private enum LegacyCodingKeys: String, CodingKey {
@@ -152,6 +161,11 @@ public struct Settings: Codable, Equatable, Sendable {
     }
 
     public static let `default` = Settings()
+
+    /// Version of the shipped default prompt list. Bump when the defaults
+    /// change and existing users should receive new/renamed entries via the
+    /// missing-title import in `migrated()`. v1.0.0 list = 1.
+    public static let defaultPromptsVersion = 1
     public static let defaultMenuBarIconStyle = "omega-check"
 
     /// Editable default for the shared prompt: asks for only the requested
@@ -179,6 +193,19 @@ public struct Settings: Codable, Equatable, Sendable {
                 next.prompts = Prompt.defaultPrompts
             }
             next.didSeedDefaultPrompts = true
+            next.importedDefaultPromptsVersion = Settings.defaultPromptsVersion
+        }
+        // App update: import default prompts the user's list is missing
+        // (matched by exact title). The user's own prompts — including
+        // edited versions of same-titled defaults — are never replaced,
+        // reordered or removed. Runs once per default-list version, so a
+        // user who deletes an imported default does not get it back on the
+        // next launch.
+        if next.importedDefaultPromptsVersion < Settings.defaultPromptsVersion {
+            let knownTitles = Set(next.prompts.map(\.name))
+            let missing = Prompt.defaultPrompts.filter { !knownTitles.contains($0.name) }
+            next.prompts.append(contentsOf: missing)
+            next.importedDefaultPromptsVersion = Settings.defaultPromptsVersion
         }
         return next
     }
