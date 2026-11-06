@@ -53,10 +53,12 @@ struct BusyEventTests {
         #expect(controller.toolTipForTesting?.contains("still running") == true)
     }
 
-    @Test func replaceFailedRemainsMenuBarOnlyFeedback() {
+    @Test func replaceFailedShowsNoMessage() {
         let controller = StatusBarController(settings: .default)
         controller.handle(.replaceFailed("The original selection is no longer intact"))
-        #expect(controller.toolTipForTesting?.contains("no longer intact") == true)
+        // The user asked for no replacement-failure reporting at all: no
+        // tooltip text, no message — the document on screen is the truth.
+        #expect(controller.toolTipForTesting == nil)
     }
 }
 

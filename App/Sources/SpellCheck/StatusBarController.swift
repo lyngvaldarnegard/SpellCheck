@@ -59,11 +59,13 @@ final class StatusBarController: NSObject {
             setFallbackTitle("✗")
             statusItem.button?.toolTip = message
             flash(title: "✗")
-        case .replaceFailed(let message):
-            // Menu-bar-only feedback — no alert popup (the user retries
-            // manually if nothing happened; the paste is never repeated).
+        case .replaceFailed:
+            // No message, no tooltip — the user sees the document on screen and
+            // asked for no replacement-failure reporting at all. The brief ✗
+            // only signals that the run ended (so the app never looks stuck);
+            // the paste is never repeated.
+            statusItem.button?.toolTip = nil
             setFallbackTitle("✗")
-            statusItem.button?.toolTip = message
             flash(title: "✗")
         case .busy(let message):
             // Menu-bar-only feedback: a second edit was requested while one is
