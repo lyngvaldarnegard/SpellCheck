@@ -208,11 +208,14 @@ private struct LegacyPrompt: Codable {
 }
 
 public extension Prompt {
-    /// The prompts shipped as editable defaults (from the FixKey archive).
+    /// The prompts shipped as editable defaults (the user's saved prompt list,
+    /// v1.0.0). Norwegian-language prompt sections were removed at the user's
+    /// request; the Allvit and Napoloen prompts were dropped. All translation
+    /// prompts sit at the bottom of the list.
     static let defaultPrompts: [Prompt] = [
         Prompt(
             name: "Fix Grammar",
-            prompt: "Polish the text by fixing grammar, spelling, punctuation, and capitalization only. Keep the same language, meaning, tone, names, numbers, dates, links, and formatting. Return only the polished text.\n\nWrite legal terms and law names in full, e.g., «skatteloven» instead of «sktl.» and «jamfør» instead of «jf.». Keep FSFIN abbreviated.",
+            prompt: "Polish the text by fixing grammar, spelling, punctuation, and capitalization only. Keep the same language, meaning, tone, names, numbers, dates, links, and formatting. Return only the polished text.",
             icon: PromptIcon.check.rawValue
         ),
         Prompt(
@@ -221,28 +224,133 @@ public extension Prompt {
             icon: PromptIcon.pen.rawValue
         ),
         Prompt(
+            name: "Humanize",
+            prompt: "You are a careful human-voice editor. Rewrite the text below as polished, natural-sounding writing that reads like a real person sharing honest observations, not a formal article or an AI summary. Keep the original language, meaning, key facts, names, numbers, dates, links, citations, references, quotations, and technical terms exactly as written, and do not add new information, invent claims, or alter the author’s intended meaning or nuance. Keep the original grammatical tense throughout, so past stays past, present stays present, and future stays future, and do not shift tense for style or flow.\n\nFix all grammar, spelling, punctuation, and capitalization errors. Make the text concise, clear, and precise by removing unnecessary words, repetition, and vague formulations, and improve sentence structure, logical flow, and readability without making the language more complicated than it needs to be. Aim for an average sentence length of 15 to 20 words and generally keep sentences under 25 words, splitting any sentence that becomes hard to follow. Allow longer sentences when accuracy or nuance requires it, and vary sentence length and rhythm so the prose never feels mechanical, mixing short, direct sentences with longer ones that carry a thought through. Clarity and natural flow matter more than strict word counts.\n\nWrite with the tone and rhythm of someone who has real experience with the subject. Replace stiff, generic, or overly polished phrasing with plain, specific wording, and cut filler and stock transitions such as “first of all,” “in conclusion,” “furthermore,” “moreover,” “delve,” and “it’s important to note.” Avoid formulaic structures like the rule of three, neat summarizing conclusions, and balanced “not only... but also” constructions unless they genuinely fit. Use contractions where they sound natural, allow mild informality and a little personality where the context permits, and match the register of the intended audience, whether casual, professional, or academic, without drifting from the tone the original purpose requires.\n\nUse fewer words wherever the meaning stays the same. When two versions say the same thing, pick the shorter one, and replace long or unusual expressions with the plain word a person would actually use. The result should normally be shorter than the original.\n\nFact check the text.\n\nDo NOT use em dashes.\n\nReturn only the revised text, with no explanations, comments, or preamble.",
+            icon: PromptIcon.pen.rawValue
+        ),
+        Prompt(
             name: "Make Shorter",
-            prompt: "Make this text shorter and cleaner while preserving all key information, the original language and meaning. Return only the shortened text.",
+            prompt: "Make this text shorter and cleaner while preserving meaning, tone, and important details. Keep the original language and return only the shortened text.\n\nKEEP REFERENCES TO SOURCES! NEVER REMOVE REFERENCES TO SOURCES!",
             icon: PromptIcon.lines.rawValue
         ),
         Prompt(
             name: "Summarize",
-            prompt: "Summarize this text into a clearly shorter version that captures the main points. Keep the original language. Return only the summary.",
+            prompt: "Summarize this text into a clearly shorter version that preserves the main points and factual details. Keep the original language. Return only the summary.",
             icon: PromptIcon.bolt.rawValue
         ),
         Prompt(
             name: "Explain this",
-            prompt: "Explain this text in simple, plain language for a non-expert. Keep the original language. Return only the explanation.",
+            prompt: "Explain this text in simple, plain language for a non-expert reader while preserving the meaning and key details. Keep the original language. Return only the explanation.",
             icon: PromptIcon.question.rawValue
         ),
         Prompt(
             name: "Convert to Bullet Points",
-            prompt: "Rewrite this as concise bullet points that capture the key information. Keep the original language and meaning. Return only the bullet points.",
+            prompt: "Rewrite this as concise bullet points that capture all key ideas and facts. Keep the original language and meaning. Return only the bullet list.",
             icon: PromptIcon.lines.rawValue
+        ),
+        Prompt(
+            name: "Convert to Markdown",
+            prompt: "Convert this text into clean, valid Markdown. Use headings and lists only when they improve readability. Preserve meaning and key details. Return only Markdown.",
+            icon: PromptIcon.sparkle.rawValue
+        ),
+        Prompt(
+            name: "Friendly Tone",
+            prompt: "Rewrite this text in a friendly, conversational tone while preserving the original meaning and key details. Keep the original language. Return only the rewritten text.",
+            icon: PromptIcon.sparkle.rawValue
+        ),
+        Prompt(
+            name: "Decline Request by Email",
+            prompt: "Write a polite, concise email that declines the request while keeping a respectful and friendly tone. Base it only on the source message. Return only the email text.",
+            icon: PromptIcon.sparkle.rawValue
+        ),
+        Prompt(
+            name: "10 Rewrites",
+            prompt: "Provide exactly 10 distinct rewrites, each preserving the original meaning but using different wording and rhythm. Output as a numbered list with one line per option. Return only the alternatives.",
+            icon: PromptIcon.sparkle.rawValue
+        ),
+        Prompt(
+            name: "TLDR",
+            prompt: "Create a TLDR with up to 7 concise bullet points covering essential facts, then add one single-sentence summary. Do not add facts that are not in the source. Return only the TLDR output.",
+            icon: PromptIcon.sparkle.rawValue
+        ),
+        Prompt(
+            name: "Synonyms",
+            prompt: "List strong single-word synonyms for the given word. Exclude duplicates and the original word. Return only the synonyms as a comma-separated list.",
+            icon: PromptIcon.sparkle.rawValue
+        ),
+        Prompt(
+            name: "Active Voice",
+            prompt: "Rewrite this text in active voice while preserving meaning, key details, and original language. Return only the revised text.",
+            icon: PromptIcon.sparkle.rawValue
+        ),
+        Prompt(
+            name: "Make Persuasive",
+            prompt: "Rewrite this text to be more persuasive and compelling while staying accurate and professional. Do not invent evidence, metrics, or claims. Return only the revised text.",
+            icon: PromptIcon.sparkle.rawValue
+        ),
+        Prompt(
+            name: "Sales Copy",
+            prompt: "Transform this into polished sales copy that highlights benefits and includes a clear call to action. Keep claims factual and grounded in the source text. Return only the sales copy.",
+            icon: PromptIcon.sparkle.rawValue
         ),
         Prompt(
             name: "Translate to English",
             prompt: "Translate this text into natural English while preserving meaning, tone, and context. Keep names, numbers, dates, and links accurate. Return only the English translation.",
+            icon: PromptIcon.translate.rawValue
+        ),
+        Prompt(
+            name: "Pinyin to Chinese",
+            prompt: "Convert this Pinyin text into simplified Chinese characters accurately. Preserve intended meaning and avoid traditional characters. Return only the converted text.",
+            icon: PromptIcon.translate.rawValue
+        ),
+        Prompt(
+            name: "Translate to Chinese",
+            prompt: "Translate this text into simplified Chinese while preserving meaning, tone, and context. Avoid traditional characters. Return only the Chinese translation.",
+            icon: PromptIcon.translate.rawValue
+        ),
+        Prompt(
+            name: "Translate to German",
+            prompt: "Translate this text into natural German while preserving meaning, tone, and context. Return only the German translation.",
+            icon: PromptIcon.translate.rawValue
+        ),
+        Prompt(
+            name: "Translate to Spanish",
+            prompt: "Translate this text into natural Spanish while preserving meaning, tone, and context. Return only the Spanish translation.",
+            icon: PromptIcon.translate.rawValue
+        ),
+        Prompt(
+            name: "Translate to French",
+            prompt: "Translate this text into natural French while preserving meaning, tone, and context. Return only the French translation.",
+            icon: PromptIcon.translate.rawValue
+        ),
+        Prompt(
+            name: "Translate to Italian",
+            prompt: "Translate this text into natural Italian while preserving meaning, tone, and context. Return only the Italian translation.",
+            icon: PromptIcon.translate.rawValue
+        ),
+        Prompt(
+            name: "Translate to Portuguese",
+            prompt: "Translate this text into natural Portuguese while preserving meaning, tone, and context. Return only the Portuguese translation.",
+            icon: PromptIcon.translate.rawValue
+        ),
+        Prompt(
+            name: "Translate to Japanese",
+            prompt: "Translate this text into natural Japanese while preserving meaning, tone, and context. Return only the Japanese translation.",
+            icon: PromptIcon.translate.rawValue
+        ),
+        Prompt(
+            name: "Translate to Esperanto",
+            prompt: "Translate this text into natural Esperanto while preserving meaning, tone, and context. Keep names, numbers, dates, and links accurate. Return only the Esperanto translation.",
+            icon: PromptIcon.translate.rawValue
+        ),
+        Prompt(
+            name: "Translate to Norwegian (Bokmål)",
+            prompt: "Translate this text into natural Norwegian Bokmål while preserving meaning, tone, and context. Keep names, numbers, dates, and links accurate. Return only the Bokmål translation.",
+            icon: PromptIcon.translate.rawValue
+        ),
+        Prompt(
+            name: "Translate to Norwegian (Nynorsk)",
+            prompt: "Translate this text into natural Norwegian Nynorsk while preserving meaning, tone, and context. Keep names, numbers, dates, and links accurate. Return only the Nynorsk translation.",
             icon: PromptIcon.translate.rawValue
         ),
     ]
