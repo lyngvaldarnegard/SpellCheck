@@ -40,7 +40,7 @@ public enum PromptIcon: String, CaseIterable, Sendable, Identifiable {
 
 /// A user prompt: title plus the full instruction text sent to the AI.
 /// Every prompt — seeded or user-created — is an ordinary editable entry.
-public struct Prompt: Codable, Equatable, Sendable, Identifiable {
+public struct Prompt: Codable, Equatable, Hashable, Sendable, Identifiable {
     public var id: UUID
     public var name: String
     public var prompt: String
