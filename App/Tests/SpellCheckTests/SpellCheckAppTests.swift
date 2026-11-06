@@ -43,21 +43,21 @@ struct AppWiringTests {
 }
 
 @MainActor
-struct BusyEventTests {
+struct StatusBarEventTests {
 
-    /// A correction requested while another one is running must be reported
-    /// in the menu bar (tooltip) — never silently dropped, never a popup.
-    @Test func busyEventIsMenuBarOnlyFeedback() {
+    /// The menu-bar icon is just the icon: engine events must not change it
+    /// (no status glyphs, no tooltips — the cursor spinner is the sole
+    /// indicator, and the user asked for no status reporting here).
+    @Test func engineEventsDoNotChangeTheIcon() {
         let controller = StatusBarController(settings: .default)
-        controller.handle(.busy("A correction is still running — the new prompt was not started. Wait for the current one to finish, then try again."))
-        #expect(controller.toolTipForTesting?.contains("still running") == true)
-    }
-
-    @Test func replaceFailedShowsNoMessage() {
-        let controller = StatusBarController(settings: .default)
-        controller.handle(.replaceFailed("The original selection is no longer intact"))
-        // The user asked for no replacement-failure reporting at all: no
-        // tooltip text, no message — the document on screen is the truth.
+        let iconBefore = controller.statusIconForTesting
+        controller.handle(.working("Running…"))
+        controller.handle(.busy("A correction is still running"))
+        controller.handle(.replaceFailed("selection gone"))
+        controller.handle(.succeeded("done"))
+        controller.handle(.failed("api error"))
+        controller.handle(.idle)
+        #expect(controller.statusIconForTesting == iconBefore)
         #expect(controller.toolTipForTesting == nil)
     }
 }

@@ -40,56 +40,17 @@ final class StatusBarController: NSObject {
         }
     }
 
-    /// Testing hook: the menu-bar item's current tooltip.
+    /// Testing hooks: the current icon image and tooltip.
+    var statusIconForTesting: NSImage? { statusItem.button?.image }
     var toolTipForTesting: String? { statusItem.button?.toolTip }
 
+    /// The menu-bar icon is just the icon: no status glyphs, no tooltips, no
+    /// flashing (the old title logic was dead code in the packaged app, since
+    /// the installed template image always replaced it, and the user asked for
+    /// no status reporting here anyway). The cursor spinner is the sole
+    /// working indicator; real errors still surface as alert windows.
     func handle(_ event: EngineEvent) {
-        switch event {
-        case .idle:
-            setFallbackTitle("⌨")
-            statusItem.button?.toolTip = nil
-        case .working(let message):
-            setFallbackTitle("⏳")
-            statusItem.button?.toolTip = message
-        case .succeeded:
-            setFallbackTitle("✓")
-            statusItem.button?.toolTip = "Done"
-            flash(title: "✓")
-        case .failed(let message):
-            setFallbackTitle("✗")
-            statusItem.button?.toolTip = message
-            flash(title: "✗")
-        case .replaceFailed:
-            // No message, no tooltip — the user sees the document on screen and
-            // asked for no replacement-failure reporting at all. The brief ✗
-            // only signals that the run ended (so the app never looks stuck);
-            // the paste is never repeated.
-            statusItem.button?.toolTip = nil
-            setFallbackTitle("✗")
-            flash(title: "✗")
-        case .busy(let message):
-            // Menu-bar-only feedback: a second edit was requested while one is
-            // still running. Nothing was edited; the user can retry after the
-            // current correction finishes.
-            setFallbackTitle("⏳")
-            statusItem.button?.toolTip = message
-        }
-    }
-
-    /// When a template image is installed the title is not rendered, so only
-    /// set it as a fallback (e.g. running from `swift run` without resources).
-    private func setFallbackTitle(_ title: String) {
-        if statusItem.button?.image == nil {
-            statusItem.button?.title = title
-        }
-    }
-
-    private func flash(title: String) {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-            guard let self, self.statusItem.button?.image == nil, self.statusItem.button?.title == title else { return }
-            self.statusItem.button?.title = "⌨"
-            self.statusItem.button?.toolTip = nil
-        }
+        // Intentionally no visual status.
     }
 
     @objc private func toggleMenu(_ sender: Any?) {

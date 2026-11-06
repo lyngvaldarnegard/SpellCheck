@@ -68,6 +68,16 @@ original app, verifies the write) → status event (+ alert on failure).
   `TextSourceError.unverified` stays in the Engine API (sources may still
   throw it) but SpellCheck's own source no longer produces it. Issue #16
   (Fast/Thorough toggle) closed as resolved by this decision.
+  2. **Replacement-failure messages removed entirely (v0.2.10, user
+  decision)**: `StatusBarController.handle` is now a visual no-op — the old
+  ⏳/✓/✗ title/tooltip logic was DEAD CODE in the packaged app anyway (the
+  installed template image always replaced the title), and the user wanted
+  no replacement messaging at all. The cursor spinner is the sole working
+  indicator; real API/config/permission errors still alert via
+  ErrorPresenter. NOTE: the v0.2.9 Release run failed only at the final
+  "commit appcast to main" step (push race with the v0.2.10 commit) — v0.2.9
+  was never published as a GitHub release; v0.2.10 supersedes it and its
+  appcast entry.
 - **v0.2.8 changes:**
   1. **Cursor spinner (user request)**: `WorkingIndicatorController` — a
      small dark non-activating panel with an `NSProgressIndicator` shown near
