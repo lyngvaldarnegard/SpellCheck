@@ -42,6 +42,7 @@ struct AppWiringTests {
     }
 }
 
+@MainActor
 struct BusyEventTests {
 
     /// A correction requested while another one is running must be reported
