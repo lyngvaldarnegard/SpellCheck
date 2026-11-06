@@ -6,7 +6,14 @@ Sigurd's macOS menu-bar app that corrects text in any app: select text (or place
 
 The app was built by a different chat (Vibe Nuage Agent). The Vibe chat's job: hold the standing context and build the next-phase prompt with the prompt-bygger skill.
 
-## Status (05.11.2026 — v0.2.3 SHIPPED, fixing the v0.2.2 real-Mac failures)
+## Status (06.11.2026 — v0.2.5 SHIPPED)
+
+- **v0.2.5 live** (Sparkle-signed, CI green): contains the v0.2.3 workflow
+  fixes, the v0.2.4 fix (model-echoed ```<<< / >>>``` input markers were
+  pasted into Notion as extra text / quote blocks — ResponseCleaner now strips
+  exactly that framing; Sigurd confirmed the workflow itself works in Notion
+  on the third attempt) and drag-and-drop prompt reordering in the Prompt
+  Editor. Issues #4–#8 stay open until Sigurd has re-tested on his Mac.
 
 - **Sigurd tested v0.2.2 on his Mac (ground truth):** Enter in the picker reached the ORIGINAL text field (destructive line break); a clicked prompt in TextEdit partially changed the text but showed "Could not replace the text"; saved prompts were lost across the update (API key survived); the menu-bar icon looked low-res. The v0.2.2 handoff claim that the field-editor delegate fixed the keyboard was WRONG.
 - **v0.2.3** fixes all four: `PickerPanel` (canBecomeKey) + explicit `NSApp.activate` so the picker owns the keyboard; FixKey-style clipboard-paste replacement with pre-paste selection verification, single-attempt paste, honest unverified/failed distinction, corrected text stays on the clipboard; lossy prompt decoding + corrupt-file backup + no stale-snapshot saves; vector template PDFs (+SVG sources) for all four icon styles with the Ω full-size and a knocked-out checkmark. Tracked in GitHub issues — they stay OPEN until Sigurd confirms on his Mac.

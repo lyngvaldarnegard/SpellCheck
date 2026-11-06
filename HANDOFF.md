@@ -1,8 +1,7 @@
 # SpellCheck — Project Handoff
 
-Last updated: 2026-11-05, after the **v0.2.3 fixes** (picker keyboard focus,
-clipboard-based replacement with honest verification, prompt-persistence
-hardening, vector menu-bar icons). Repo:
+Last updated: 2026-11-06, after **v0.2.5** (v0.2.3 workflow fixes + v0.2.4
+marker-echo fix + prompt reordering). Repo:
 https://github.com/lyngvaldarnegard/SpellCheck (default branch `main`,
 **not protected** on purpose).
 
@@ -53,7 +52,16 @@ original app, verifies the write) → status event (+ alert on failure).
 
 ## 3. Current state
 
-- Latest release: **v0.2.3** (universal, ad-hoc signed, Sparkle-signed update).
+- Latest release: **v0.2.5** (universal, ad-hoc signed, Sparkle-signed
+  update; contains everything from v0.2.4, which was never published
+  separately). v0.2.4 = strip model-echoed <<< / >>> markers in
+  ResponseCleaner (Notion pasted them as extra text / quote blocks; 6 new
+  tests, legitimate angle brackets untouched; system prompt forbids the
+  markers) + larger checkmark in the Ω+✓ icon. v0.2.5 = drag-and-drop
+  prompt reordering in the Prompt Editor sidebar (persists immediately on
+  drop, purely structural; disabled while a search filter is active), same
+  order in the picker, first prompt highlighted on open, ⌥L still only
+  opens the picker. `Prompt` is now Hashable.
   Release history: v0.2.0 (BROKEN — ad-hoc + hardened runtime dyld abort) →
   v0.2.1 (launch fixed) → v0.2.2 (picker X button + field-editor delegate —
   **did NOT fix Enter reaching the original app**) → v0.2.3.
@@ -114,7 +122,12 @@ original app, verifies the write) → status event (+ alert on failure).
   — the user should confirm this works when v0.2.2+ ships.
 - The user's v1 settings migrated in place (API key kept, ⌥⌘K → ⌥L, legacy
   customPrompts → prompts, defaults seeded once).
-- Tests: Core 51/51, Engine 32/32 (Linux, this session). New App tests
+- Tests: Core 58/58, Engine 33/33 (Linux); macOS CI + Release green for
+  v0.2.5 (the shipped zip was extracted, re-verified and smoke-launched).
+  NOTE 05-06.11.2026: GitHub's macOS runner pool was congested for hours
+  ("job was not acquired by Runner") — several v0.2.4/v0.2.5 release
+  attempts died that way before one got a runner; re-pushing the tag is the
+  only retry lever (the agent token cannot rerun runs). New App tests
   (macos-15 CI): picker key-window status, first responder, Enter via
   `panel.sendEvent`, Escape cancel, arrow/search behavior, icon template
   assets. CI also builds + verifies the bundle + smoke-launches the app.
