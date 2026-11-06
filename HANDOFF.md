@@ -281,11 +281,12 @@ notes, appcast and notes files follow the tag as usual.
 
 **v1.0.0 planned content — updated default prompts (user instruction,
 06.11.2026)**: the user's new default prompt list is PREPARED on the draft
-branch **`vibe/v1-default-prompts`** (commit 3bb55f1) — do NOT ship v1.0.0
-without merging it. The draft: 27 prompts from the user's saved list;
+branch **`vibe/v1-default-prompts`** (head 73aec3f) — do NOT ship v1.0.0
+without merging it. The draft: 19 prompts from the user's saved list;
 Allvit, Napoloen-as-named and Juss dropped (Juss is Norway-specific);
 Napoloen's text lives on as **Humanize** (Norwegian sections removed);
-all translation prompts (incl. Pinyin to Chinese) at the bottom; every
+translation prompts trimmed to English, Esperanto and Norwegian (Bokmål +
+Nynorsk) only, at the bottom of the list; every
 Norwegian-language section removed from prompt bodies (only the
 language names Bokmål/Nynorsk remain, in the two Norwegian translation
 prompts the user dictated verbatim); Make Shorter's "REFERENCES" typos
