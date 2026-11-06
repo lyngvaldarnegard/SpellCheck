@@ -56,6 +56,12 @@ final class StatusBarController: NSObject {
             setFallbackTitle("✗")
             statusItem.button?.toolTip = message
             flash(title: "✗")
+        case .replaceFailed(let message):
+            // Menu-bar-only feedback — no alert popup (the user retries
+            // manually if nothing happened; the paste is never repeated).
+            setFallbackTitle("✗")
+            statusItem.button?.toolTip = message
+            flash(title: "✗")
         }
     }
 
