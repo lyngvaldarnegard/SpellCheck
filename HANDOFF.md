@@ -100,7 +100,7 @@ original app, verifies the write) → status event (+ alert on failure).
   9. **Release notes (issue #14)**: `release.yml` now REQUIRES
      `scripts/release-notes/vX.Y.Z.md` and publishes it as the release body
      (no more Full-Changelog-only pages); v0.2.6 notes written in Norwegian.
-- Latest release: **v0.2.5** (universal, ad-hoc signed, Sparkle-signed
+- Latest release: **v0.2.6** (universal, ad-hoc signed, Sparkle-signed update; CI + Release workflows green; release notes from `scripts/release-notes/v0.2.6.md`). Previous: **v0.2.5** (universal, ad-hoc signed, Sparkle-signed
   update; contains everything from v0.2.4, which was never published
   separately). v0.2.4 = strip model-echoed <<< / >>> markers in
   ResponseCleaner (Notion pasted them as extra text / quote blocks; 6 new
