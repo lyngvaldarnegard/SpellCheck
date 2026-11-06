@@ -281,7 +281,7 @@ notes, appcast and notes files follow the tag as usual.
 
 **v1.0.0 planned content — updated default prompts (user instruction,
 06.11.2026)**: the user's new default prompt list is PREPARED on the draft
-branch **`vibe/v1-default-prompts`** (head 73aec3f) — do NOT ship v1.0.0
+branch **`vibe/v1-default-prompts`** (head e838a33) — do NOT ship v1.0.0
 without merging it. The draft: 19 prompts from the user's saved list;
 Allvit, Napoloen-as-named and Juss dropped (Juss is Norway-specific);
 Napoloen's text lives on as **Humanize** (Norwegian sections removed);
@@ -290,12 +290,18 @@ Nynorsk) only, at the bottom of the list; every
 Norwegian-language section removed from prompt bodies (only the
 language names Bokmål/Nynorsk remain, in the two Norwegian translation
 prompts the user dictated verbatim); Make Shorter's "REFERENCES" typos
-fixed. Existing installs keep their prompts untouched (user's explicit
-choice): the one-time seeding guard (`didSeedDefaultPrompts`) already
-ensures a user's list is NEVER overwritten — new defaults apply only to
-fresh installs. Tests: Core 78/78, Engine 49/49, App parse-checked on the
-branch. The app was NOT updated/released with these prompts yet (explicit
-user instruction — merge + release as v1.0.0 when the user says go).
+fixed. **Migration (user's revised decision)**: on app update, existing
+installs IMPORT default prompts whose titles they are missing — appended
+AFTER the user's own prompts, never replacing, reordering or duplicating
+them (match by exact title; a user-edited "Fix Grammar" keeps its text).
+Guarded by a new persisted `importedDefaultPromptsVersion` + code constant
+`Settings.defaultPromptsVersion` (= 1 for the v1.0.0 list): the import runs
+ONCE per defaults version, so a user who later deletes an imported default
+does not get it back on the next launch. Tests: Core 79/79 (import-by-title,
+same-title never replaced, once-per-version, deletion stays deleted),
+Engine 49/49, App parse-checked on the branch. The app was NOT
+updated/released with these prompts yet (explicit user instruction —
+merge + release as v1.0.0 when the user says go).
 
 macOS:
 ```sh
