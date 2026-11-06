@@ -1,8 +1,9 @@
 # SpellCheck — Project Handoff
 
-Last updated: 2026-11-06, after the **v0.2.7** session (intermittent
-picker/hotkey/focus investigation, busy-event feedback, AX latency bounds,
-stale-operation guard, backup-model Fetch-models UI, Mistral prompt cache key).
+Last updated: 2026-11-06, after the **v0.2.8** session (cursor spinner while
+working, identical-result write-back, own windows lowered for the whole run;
+follows v0.2.7: intermittent picker/hotkey/focus fixes, backup-model
+Fetch-models UI, Mistral prompt cache key).
 Repo:
 https://github.com/lyngvaldarnegard/SpellCheck (default branch `main`,
 **not protected** on purpose).
@@ -54,7 +55,24 @@ original app, verifies the write) → status event (+ alert on failure).
 
 ## 3. Current state
 
-- **v0.2.7 changes (this session, all covered by new tests unless noted):**
+- **v0.2.8 changes (this session, all covered by new tests unless noted):**
+  1. **Cursor spinner (user request)**: `WorkingIndicatorController` — a
+     small dark non-activating panel with an `NSProgressIndicator` shown near
+     the mouse pointer on `EngineEvent.working` and hidden on terminal events.
+     `ignoresMouseEvents`, never key, no app activation. Wired in
+     `AppDelegate.handle`; a `.busy` rejection leaves it up (the original run
+     is still in flight).
+  2. **Identical-result write-back (user request)**: the engine no longer
+     skips `replace` when the corrected text equals the original — the visible
+     replacement is the user's confirmation that the workflow ran. The AX
+     `verify` treats an unchanged document as the expected outcome for an
+     identical write-back (document snapshot == desired state ⇒ success).
+  3. **Own windows lowered for the whole run (issue #12 remainder)**:
+     `finishPickerSession(startedRun:)` keeps the level-lowering active until
+     the run's terminal event (`succeeded`/`failed`/`replaceFailed`) instead
+     of restoring at picker close; `.busy` is not terminal. Restoring earlier
+     let our windows jump forward while SpellCheck was still active mid-run.
+- **v0.2.7 changes:**
   1. **Intermittent ⌥L/menu/picker (issue #4)** — three root-cause findings:
      (a) `openPromptPicker` gated the picker on `engine.isBusy` and silently
      returned while a (up to 120 s) request was in flight → "nothing happens",

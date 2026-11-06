@@ -346,6 +346,19 @@ final class AccessibilityTextSource: TextSource, @unchecked Sendable {
             // No document readback available — do not claim success.
             throw TextSourceError.unverified(target.appName)
         }
+        // Identical replacement: the desired document state is exactly the
+        // current one, so an unchanged document IS the expected outcome and
+        // confirms success (the user asked for the write-back as visible
+        // confirmation that the workflow ran).
+        if newText == target.originalText {
+            try await Task.sleep(nanoseconds: 150_000_000)
+            if let current = copyAttribute(kAXValueAttribute, from: target.element, as: String.self),
+               current == before {
+                return
+            }
+            axLog.error("identical replacement: document changed unexpectedly")
+            throw TextSourceError.unverified(target.appName)
+        }
         var after = before
         for _ in 0..<8 {
             try await Task.sleep(nanoseconds: 150_000_000)

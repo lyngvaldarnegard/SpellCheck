@@ -54,6 +54,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// while the picker is up, so activating SpellCheck for keyboard focus
     /// does not raise Settings / Prompt Editor over the user's work.
     private var loweredWindows: [NSWindow] = []
+    /// True while a correction started from the picker is still running —
+    /// SpellCheck's own windows stay below other apps' windows until it
+    /// finishes, so nothing of ours jumps forward mid-workflow.
+    private var windowsLoweredForRun = false
+    private var workingIndicator: WorkingIndicatorController?
     private(set) var settings: AppSettings = .default
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -129,6 +134,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
 
         registerHotKey()
+        workingIndicator = WorkingIndicatorController()
         updaterController = UpdaterController()
 
         if !AXIsProcessTrusted() {
@@ -234,8 +240,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 picker.onChoose = { [weak self] prompt in
                     guard let self else { return }
                     let grabbed = self.pendingGrab
-                    self.finishPickerSession()
-                    self.runPrompt(prompt, on: grabbed)
+                    let willRun = self.engine != nil && grabbed != nil
+                    self.finishPickerSession(startedRun: willRun)
+                    if willRun {
+                        self.runPrompt(prompt, on: grabbed)
+                    }
                 }
                 picker.onCancel = { [weak self] in
                     guard let self else { return }
@@ -264,11 +273,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Tears down the current picker session state completely — exactly one
     /// place, so no path (choose, cancel, outside click, grab failure) can
     /// leave a stale `pickerSessionActive` flag blocking future openings.
-    private func finishPickerSession() {
+    /// When a correction was started, the lowered windows stay lowered until
+    /// the run's terminal event (see `handle(_:)`) — restoring them earlier
+    /// would let them jump forward while SpellCheck is still active mid-run.
+    private func finishPickerSession(startedRun: Bool = false) {
         pickerController = nil
         pendingGrab = nil
         pickerSessionActive = false
-        endPickerSession()
+        windowsLoweredForRun = startedRun
+        if !startedRun {
+            endPickerSession()
+        }
     }
 
     private func runPrompt(_ prompt: Prompt, on grabbed: GrabbedText?) {
@@ -304,15 +319,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func handle(_ event: EngineEvent) {
         statusBarController?.handle(event)
-        // Replacement failures (including uncertain readback) and busy
-        // rejections are menu-bar only — the user asked for no intrusive
-        // popup there and can retry manually. A busy rejection never edits
-        // anything. Real API/configuration/permission errors still alert.
         switch event {
-        case .failed(let message):
-            ErrorPresenter.show(title: "SpellCheck", message: message)
-        default:
+        case .working:
+            // FixKey-style spinner near the cursor while the AI is working.
+            workingIndicator?.show()
+        case .succeeded, .failed, .replaceFailed:
+            workingIndicator?.hide()
+            // Terminal: restore our own windows' level now that the
+            // workflow is over (a busy rejection is NOT terminal — the
+            // original correction is still running, keep them lowered).
+            if windowsLoweredForRun {
+                windowsLoweredForRun = false
+                endPickerSession()
+            }
+        case .busy:
+            // Another edit was requested while one is running: the spinner
+            // stays up (the original correction is still in flight) and the
+            // rejection is menu-bar-only feedback. Nothing is edited.
             break
+        case .idle:
+            workingIndicator?.hide()
+        }
+        // Real API/configuration/permission errors still alert. Replacement
+        // failures (including uncertain readback) and busy rejections stay
+        // menu-bar only — the user asked for no intrusive popup there.
+        if case .failed(let message) = event {
+            ErrorPresenter.show(title: "SpellCheck", message: message)
         }
     }
 

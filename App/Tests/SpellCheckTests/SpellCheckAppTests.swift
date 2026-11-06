@@ -59,3 +59,18 @@ struct BusyEventTests {
         #expect(controller.toolTipForTesting?.contains("no longer intact") == true)
     }
 }
+
+@MainActor
+struct WorkingIndicatorTests {
+
+    /// The FixKey-style spinner: visible while working, hidden when done,
+    /// never key, never intercepting mouse clicks.
+    @Test func spinnerShowsAndHidesWithoutTakingFocus() {
+        let indicator = WorkingIndicatorController()
+        #expect(indicator.isShowing == false)
+        indicator.show()
+        #expect(indicator.isShowing == true)
+        indicator.hide()
+        #expect(indicator.isShowing == false)
+    }
+}

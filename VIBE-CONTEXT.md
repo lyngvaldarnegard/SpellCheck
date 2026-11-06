@@ -6,9 +6,21 @@ Sigurd's macOS menu-bar app that corrects text in any app: select text (or place
 
 The app was built by a different chat (Vibe Nuage Agent). The Vibe chat's job: hold the standing context and build the next-phase prompt with the prompt-bygger skill.
 
-## Status (06.11.2026 — v0.2.7 session)
+## Status (06.11.2026 — v0.2.8 session)
 
-- **v0.2.7 (this session)**: intermittent ⌥L/picker/focus investigation
+- **v0.2.8 (this session)**: FixKey-style spinner (`WorkingIndicatorController`)
+  near the cursor while the AI is working (non-activating, click-through,
+  never key; shown on `working`, hidden on terminal events, stays up on a
+  `busy` rejection while the original run is in flight); identical AI results
+  are now written back over the selection too (visible replacement = user's
+  confirmation; AX verify treats an unchanged document as the expected
+  outcome for an identical write-back); SpellCheck's own windows stay lowered
+  behind other apps' windows until the correction finishes, not just while
+  the picker is open (issue #12 remainder — not reproducible dev-side, needs
+  Sigurd's confirmation). Tests: Core 76/76, Engine 49/49 (Linux); App
+  parse-checked + new App tests in macOS CI. All three changes await
+  Sigurd's real-Mac testing.
+- **v0.2.7**: intermittent ⌥L/picker/focus investigation
   (issue #4) — root causes found in code: the picker silently refused to open
   while a request was in flight (busy gate) and a second run was silently
   dropped, explaining "nothing happens" + "suddenly corrected later"; rapid

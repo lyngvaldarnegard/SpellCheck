@@ -97,10 +97,8 @@ public actor CorrectionEngine {
             eventHandler(.failed("The API returned an empty result"))
             return
         }
-        guard corrected != original else {
-            eventHandler(.succeeded(corrected))
-            return
-        }
+        // An identical result is written back too: the visible replacement is
+        // the user's confirmation that the workflow actually ran.
         eventHandler(.working("Replacing…"))
         do {
             try await grabbed.replace(corrected)

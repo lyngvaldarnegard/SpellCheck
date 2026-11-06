@@ -86,7 +86,7 @@ struct CorrectionEngineTests {
         #expect(source.replacedWith == "Corrected text")
     }
 
-    @Test func unchangedResultSkipsReplace() async {
+    @Test func identicalResultStillReplacesAsConfirmation() async {
         let source = FakeSource()
         source.scope = .selection("already fine")
         let backend = FakeBackend()
@@ -96,7 +96,9 @@ struct CorrectionEngineTests {
 
         await engine.run(prompt: prompt)
 
-        #expect(source.replacedWith == nil)
+        // The identical text is written back too — the visible replacement is
+        // the user's confirmation that the workflow ran.
+        #expect(source.replacedWith == "already fine")
         #expect(recorder.events.last == .succeeded("already fine"))
     }
 
