@@ -6,6 +6,21 @@ Sigurd's macOS menu-bar app that corrects text in any app: select text (or place
 
 The app was built by a different chat (Vibe Nuage Agent). The Vibe chat's job: hold the standing context and build the next-phase prompt with the prompt-bygger skill.
 
+## Status (06.11.2026 — v0.2.10 session)
+
+- **Next release must be v1.0.0** (Sigurd's instruction): the version after
+  v0.2.10 is version 1 — tag `v1.0.0`, not v0.2.11. Recorded in HANDOFF §4.
+- **All GitHub content must be in English** (Sigurd's instruction): issues,
+  PRs, release notes, docs, commit messages — never Norwegian. Release notes
+  v0.2.6–v0.2.10 were translated retroactively; HANDOFF working agreements
+  updated so future sessions follow this automatically. The only Norwegian
+  left is the seeded "Fix Grammar" prompt content (functional app data —
+  Norwegian legal-term spell-out instructions), kept unless Sigurd says
+  otherwise.
+- **v0.2.10 published** (paste-only write-back, no messages, icon cleanup):
+  see below for v0.2.9/v0.2.10 details. v0.2.9 was never published as a
+  release (appcast push race) — v0.2.10 supersedes it.
+
 ## Status (06.11.2026 — v0.2.9 session)
 
 - **v0.2.9 (this session)**: post-paste verification REMOVED by explicit user

@@ -275,6 +275,10 @@ original app, verifies the write) → status event (+ alert on failure).
 
 ## 4. Build / test / release
 
+**NEXT VERSION: v1.0.0** (direct user instruction, 06.11.2026): the next
+release after v0.2.10 must be tagged `v1.0.0` — not v0.2.11. All release
+notes, appcast and notes files follow the tag as usual.
+
 macOS:
 ```sh
 swift test --package-path Core && swift test --package-path Engine && swift test --package-path App
