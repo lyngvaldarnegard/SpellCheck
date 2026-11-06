@@ -103,7 +103,7 @@ The app was built by a different chat (Vibe Nuage Agent). The Vibe chat's job: h
 
 ## Sigurd's v2 requirements (05.11.2026, his words — binding)
 
-1. **Remove the offline mode entirely.** "det er dumt. det skal bare være api hele poenget er ki redigering av teksten." API-only: the whole point of the app is AI text editing. The rule-based backend, its Settings entry and the offline code paths go away. API configuration becomes mandatory, not an alternative.
+1. **Remove the offline mode entirely.** (User's words, translated from Norwegian: "it's dumb — it should just be API; the whole point is AI editing of the text.") API-only: the whole point of the app is AI text editing. The rule-based backend, its Settings entry and the offline code paths go away. API configuration becomes mandatory, not an alternative.
 2. **No non-editable preset prompts.** The six BuiltinActions (Fix typos, Make professional, Make casual, Summarize, Expand, Translate) are hardcoded and cannot be edited in-app. Remove them, or at minimum move them into the prompt list as ordinary editable entries. Every prompt must be creatable, editable and deletable inside the app.
 3. **Copy FixKey's UI wholesale**, at least the prompt page. Settings must contain: API configuration, hot key, and such settings — and prompts get their own separate tab/window: a FixKey-style Prompt Editor (reference description below).
 4. **⌘S saves.** Cmd+S must save the prompts and the settings (standard macOS save shortcut in the Prompt Editor and Settings windows — not just a Save button click).

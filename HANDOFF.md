@@ -32,7 +32,7 @@ fetches `GET {base}/models`, a menu-bar icon picker, launch-at-login
 (SMAppService) and Sparkle-based auto-update (still gated on a Sparkle key
 pair + a public feed, see §6).
 
-Owner/user notes: speaks Norwegian; uses the **Mistral API**
+Owner/user notes: uses the **Mistral API**
 (`mistral-small-latest`, cheap+fast). Preferred icon: **Ω + checkmark**.
 Existing v1 settings are migrated (⌥⌘K → ⌥L, `customPrompts` → `prompts`,
 default prompt list seeded once) without losing anything else.
@@ -183,7 +183,7 @@ original app, verifies the write) → status event (+ alert on failure).
      `.normal` when the session ends. Keyboard focus is untouched.
   9. **Release notes (issue #14)**: `release.yml` now REQUIRES
      `scripts/release-notes/vX.Y.Z.md` and publishes it as the release body
-     (no more Full-Changelog-only pages); v0.2.6 notes written in Norwegian.
+     (no more Full-Changelog-only pages).
 - Latest release: **v0.2.6** (universal, ad-hoc signed, Sparkle-signed update; CI + Release workflows green; release notes from `scripts/release-notes/v0.2.6.md`). Previous: **v0.2.5** (universal, ad-hoc signed, Sparkle-signed
   update; contains everything from v0.2.4, which was never published
   separately). v0.2.4 = strip model-echoed <<< / >>> markers in
@@ -379,6 +379,9 @@ open until the user re-tests repeatedly in Notion. v0.2.4 also enlarges the
 ## 8. Working agreements with the user
 
 - Full autonomy granted; push to `main` directly is accepted; releases via tags.
-- Communication language: Norwegian (user writes Norwegian; agent replies in Norwegian).
+- **ALL GitHub content must be in English** — issues, PRs, release notes,
+  docs, commit messages. Nothing on GitHub may ever be in Norwegian.
+  (Direct user instruction, 06.11.2026; all release notes v0.2.6–v0.2.10
+  were translated to English retroactively.)
 - Never claim the app is tested on the user's behalf; his verdict on the real
   Mac is ground truth over any green suite.
