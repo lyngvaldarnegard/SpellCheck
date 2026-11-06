@@ -6,14 +6,32 @@ Sigurd's macOS menu-bar app that corrects text in any app: select text (or place
 
 The app was built by a different chat (Vibe Nuage Agent). The Vibe chat's job: hold the standing context and build the next-phase prompt with the prompt-bygger skill.
 
-## Status (06.11.2026 — v0.2.5 SHIPPED)
+## Status (06.11.2026 — v0.2.6 session)
 
+- **v0.2.6 (this session)**: shared prompt (Settings section, sent before the
+  selected prompt in every request, editable default asking for result-only
+  in the original language), backup model with one-retry fallback
+  (408/429/5xx, timeouts, empty/unusable responses; auth errors never fall
+  back; both-fail error names both models), lenient GLM-style response
+  parsing (string/part-array/null content; actionable `unusableResponse`
+  error instead of "data couldn't be read"), outside-click picker dismissal
+  (no refocus, nothing edited), replacement failures now menu-bar-only (no
+  intrusive popup), Ω-only icon at the same full scale as Ω+checkmark
+  (previews in `docs/icon-previews/`), the stray SwiftUI "Loading…" window
+  scene removed (no more Space switch), and other SpellCheck windows no
+  longer raised by ⌥L (temporarily window-level −1 during a picker session).
+  Release notes now require `scripts/release-notes/vX.Y.Z.md` (issue #14).
+  Tests: Core 68/68, Engine 43/43 on Linux; App on macOS CI. Issues stay
+  OPEN until Sigurd confirms each on his Mac. GLM 5.3 Flash compatibility is
+  NOT verified against the provider — Sigurd must test.
 - **v0.2.5 live** (Sparkle-signed, CI green): contains the v0.2.3 workflow
   fixes, the v0.2.4 fix (model-echoed ```<<< / >>>``` input markers were
   pasted into Notion as extra text / quote blocks — ResponseCleaner now strips
   exactly that framing; Sigurd confirmed the workflow itself works in Notion
   on the third attempt) and drag-and-drop prompt reordering in the Prompt
-  Editor. Issues #4–#8 stay open until Sigurd has re-tested on his Mac.
+  Editor. **Sigurd confirmed drag-to-reorder works.** Issues #4–#8 stay open
+  until Sigurd has re-tested on his Mac (persistence across restart/update
+  and first-item picker highlight still unconfirmed).
 
 - **Sigurd tested v0.2.2 on his Mac (ground truth):** Enter in the picker reached the ORIGINAL text field (destructive line break); a clicked prompt in TextEdit partially changed the text but showed "Could not replace the text"; saved prompts were lost across the update (API key survived); the menu-bar icon looked low-res. The v0.2.2 handoff claim that the field-editor delegate fixed the keyboard was WRONG.
 - **v0.2.3** fixes all four: `PickerPanel` (canBecomeKey) + explicit `NSApp.activate` so the picker owns the keyboard; FixKey-style clipboard-paste replacement with pre-paste selection verification, single-attempt paste, honest unverified/failed distinction, corrected text stays on the clipboard; lossy prompt decoding + corrupt-file backup + no stale-snapshot saves; vector template PDFs (+SVG sources) for all four icon styles with the Ω full-size and a knocked-out checkmark. Tracked in GitHub issues — they stay OPEN until Sigurd confirms on his Mac.

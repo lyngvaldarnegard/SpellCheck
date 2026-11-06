@@ -7,16 +7,64 @@ public protocol CorrectionBackend: Sendable {
     /// Whether the backend is ready to serve requests (credentials present, etc.).
     var isReady: Bool { get }
 
-    /// Edits `text` according to the user prompt's instruction text.
-    func correct(text: String, prompt: String) async throws -> String
+    /// Edits `text` according to the user prompt's instruction text and the
+    /// shared prompt (a common instruction included in every request).
+    func correct(text: String, prompt: String, sharedPrompt: String) async throws -> String
+}
+
+extension CorrectionBackend {
+    /// Backends that have not been updated to the shared-prompt signature yet.
+    public func correct(text: String, prompt: String) async throws -> String {
+        try await correct(text: text, prompt: prompt, sharedPrompt: "")
+    }
 }
 
 /// Errors a backend can throw.
 public enum CorrectionError: Error, Equatable, Sendable {
     case notConfigured
     case emptyResponse
+    /// The provider answered with an HTTP error status. `message` is a short,
+    /// sanitized summary — never the full response body.
+    case http(status: Int, message: String)
+    /// The response could not be read or used (unexpected format, missing
+    /// content, undecodable payload). The model or endpoint may be incompatible.
+    case unusableResponse(String)
     case backendFailed(String)
     case cancelled
+
+    /// Whether a failure of this kind is worth retrying on a backup model:
+    /// temporary capacity/rate limits, server errors, timeouts and unusable
+    /// responses qualify; configuration and authentication errors do not.
+    public var isRetryableWithBackup: Bool {
+        switch self {
+        case .emptyResponse, .unusableResponse:
+            return true
+        case .http(let status, _):
+            return Self.retryableStatuses.contains(status)
+        case .backendFailed, .notConfigured, .cancelled:
+            return false
+        }
+    }
+
+    public static let retryableStatuses: Set<Int> = [408, 429, 500, 502, 503, 504]
+}
+
+/// Whether an error thrown by a backend is worth retrying on a backup model.
+public enum FallbackPolicy {
+    public static func shouldFallback(after error: Error) -> Bool {
+        if let correctionError = error as? CorrectionError {
+            return correctionError.isRetryableWithBackup
+        }
+        if let urlError = error as? URLError {
+            switch urlError.code {
+            case .timedOut, .networkConnectionLost, .cannotConnectToHost, .cannotFindHost, .dnsLookupFailed, .notConnectedToInternet:
+                return true
+            default:
+                return false
+            }
+        }
+        return false
+    }
 }
 
 /// Trims a backend response: some models wrap the answer in quotes, echo the

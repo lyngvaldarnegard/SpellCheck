@@ -15,7 +15,7 @@ struct PromptBuilderTests {
 
     @Test func systemPromptDemandsTextOnlyOutput() {
         let messages = PromptBuilder.messages(prompt: "Summarize this", text: "long text")
-        #expect(messages[0].content.contains("Output ONLY the resulting text"))
+        #expect(messages[0].content.contains("Return ONLY the requested result"))
     }
 
     @Test func userPromptWrapsTextInMarkers() {
@@ -41,7 +41,76 @@ struct PromptBuilderTests {
         {"choices":[{"message":{"content":"corrected text"}}]}
         """
         let response = try JSONDecoder().decode(ChatCompletion.Response.self, from: Data(json.utf8))
-        #expect(response.choices.first?.message.content == "corrected text")
+        #expect(response.choices.first?.message.content == .text("corrected text"))
+        #expect(response.contentText == "corrected text")
+    }
+
+    // MARK: Shared prompt (issue #9)
+
+    @Test func sharedPromptComesBeforeSelectedPrompt() {
+        let messages = PromptBuilder.messages(
+            prompt: "Improve the writing",
+            sharedPrompt: "KEEP THE ORIGINAL LANGUAGE.",
+            text: "en setning"
+        )
+        #expect(messages.count == 2)
+        #expect(messages[0].role == .system)
+        let system = messages[0].content
+        if let range = system.range(of: "KEEP THE ORIGINAL LANGUAGE."),
+           let promptRange = system.range(of: "Improve the writing") {
+            #expect(range.lowerBound < promptRange.lowerBound)
+        } else {
+            Issue.record("system message must contain shared prompt and selected prompt")
+        }
+        #expect(messages[1].role == .user)
+        #expect(messages[1].content.contains("en setning"))
+    }
+
+    @Test func emptySharedPromptIsOmitted() {
+        let messages = PromptBuilder.messages(prompt: "Fix grammar", sharedPrompt: "  \n ", text: "x")
+        #expect(messages[0].content.contains("Fix grammar"))
+        #expect(!messages[0].content.contains("\n\n\n"))
+    }
+
+    @Test func systemPromptAsksForLanguagePreservationAndNoDelimiters() {
+        let messages = PromptBuilder.messages(prompt: "Summarize", sharedPrompt: "", text: "x")
+        let system = messages[0].content
+        #expect(system.contains("Preserve the original language"))
+        #expect(system.contains("<<<"))
+        #expect(system.contains("quotes, Markdown, or code fences"))
+        #expect(system.contains("translation"))
+    }
+
+    // MARK: Lenient response parsing (issue #11)
+
+    @Test func responseContentDecodesPartArrays() throws {
+        let json = """
+        {"choices":[{"message":{"content":[{"type":"text","text":"part one "},{"type":"text","text":"part two"}]}}]}
+        """
+        let response = try JSONDecoder().decode(ChatCompletion.Response.self, from: Data(json.utf8))
+        #expect(response.contentText == "part one part two")
+    }
+
+    @Test func nullContentYieldsNoResultText() throws {
+        let json = """
+        {"choices":[{"message":{"content":null}}]}
+        """
+        let response = try JSONDecoder().decode(ChatCompletion.Response.self, from: Data(json.utf8))
+        // No usable text — the backend reports an empty result (which is a
+        // fallback-worthy condition), not a decoding crash.
+        #expect(response.contentText == nil || response.contentText == "")
+    }
+
+    @Test func fallbackPolicyClassifiesErrors() {
+        #expect(CorrectionError.http(status: 429, message: "capacity").isRetryableWithBackup)
+        #expect(CorrectionError.http(status: 503, message: "unavailable").isRetryableWithBackup)
+        #expect(CorrectionError.emptyResponse.isRetryableWithBackup)
+        #expect(CorrectionError.unusableResponse("bad format").isRetryableWithBackup)
+        #expect(!CorrectionError.http(status: 401, message: "bad key").isRetryableWithBackup)
+        #expect(!CorrectionError.http(status: 400, message: "bad request").isRetryableWithBackup)
+        #expect(!CorrectionError.notConfigured.isRetryableWithBackup)
+        #expect(FallbackPolicy.shouldFallback(after: URLError(.timedOut)))
+        #expect(!FallbackPolicy.shouldFallback(after: CorrectionError.cancelled))
     }
 }
 

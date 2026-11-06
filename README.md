@@ -21,8 +21,17 @@ window, no confirmation step.
   Monitoring permission; only Accessibility is required.
 - **FixKey-style prompt picker** — a compact dark popup with a search field
   (focused, filters as you type), a scrollable list of prompts with icons,
-  keyboard ↑/↓ selection, Enter to run, click to run, Escape to close, and an
+  keyboard ↑/↓ selection, Enter to run, click to run, Escape to close,
+  clicking outside dismisses it without editing anything, and an
   empty state when the search matches nothing.
+- **Shared prompt** — an editable common instruction in its own Settings
+  section, included in every request before the selected prompt. The default
+  asks the model to return only the requested result, in the text's original
+  language, without explanations, quotes or unsolicited Markdown.
+- **Backup model** — optionally configure a second model; when a request fails
+  temporarily (capacity, rate limit, server error, timeout) or returns an
+  unusable response, the same request is retried once on the backup.
+  Replacement is never retried automatically.
 - **Fully editable prompts** — every prompt is an ordinary editable entry.
   The built-in defaults (Fix Grammar, Improve Writing, Make Shorter,
   Summarize, Explain this, Convert to Bullet Points, Translate to English —

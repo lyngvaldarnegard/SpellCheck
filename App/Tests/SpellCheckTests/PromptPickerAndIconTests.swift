@@ -139,6 +139,53 @@ extension PromptPickerWindowController {
     }
 }
 
+/// Outside-click dismissal (issue #15): the picker is a transient popup.
+/// Clicking outside must dismiss it without choosing a prompt and without
+/// invoking the cancel path (which refocuses the original app — the click
+/// itself already moved focus).
+@MainActor
+struct PromptPickerOutsideClickTests {
+
+    private func makeApp() -> NSApplication {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        return app
+    }
+
+    @Test func outsideClickDismissesWithoutChoosingAndWithoutRefocus() async throws {
+        _ = makeApp()
+        let controller = PromptPickerWindowController(prompts: [Prompt(name: "Fix", prompt: "fix it")])
+        var chosen: Prompt?
+        var cancelled = false
+        var dismissed = false
+        controller.onChoose = { chosen = $0 }
+        controller.onCancel = { cancelled = true }
+        controller.onDismiss = { dismissed = true }
+        controller.show()
+        try await Task.sleep(nanoseconds: 200_000_000)
+
+        controller.dismissFromOutsideClickForTesting()
+        try await Task.sleep(nanoseconds: 100_000_000)
+
+        #expect(chosen == nil)
+        #expect(!cancelled)
+        #expect(dismissed)
+    }
+
+    @Test func pointsOutsidePanelFrameAreDetected() {
+        _ = makeApp()
+        let controller = PromptPickerWindowController(prompts: [Prompt(name: "Fix", prompt: "fix it")])
+        controller.show()
+        // The panel is centered by positionPanel(); its own frame is inside,
+        // a far-away point is outside.
+        let frame = controller.panelFrameForTesting
+        #expect(!frame.isEmpty)
+        #expect(!controller.isPointOutsidePanelForTesting(NSPoint(x: frame.midX, y: frame.midY)))
+        #expect(controller.isPointOutsidePanelForTesting(NSPoint(x: -10000, y: -10000)))
+        controller.closeForTesting()
+    }
+}
+
 /// Menu-bar icon assets. SwiftPM tests do not run inside the packaged .app,
 /// so asset LOADING is asserted on the source tree (the files build-app.sh
 /// copies into the bundle); verify-bundle.sh asserts the packaged app

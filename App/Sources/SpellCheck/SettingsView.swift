@@ -32,7 +32,21 @@ struct SettingsView: View {
                     .textContentType(.password)
                 TextField("API Base URL", text: $settings.baseURL)
                 modelPicker
+                TextField("Backup model (optional)", text: $settings.backupModel)
+                Text("If a request to the model above fails temporarily (capacity, rate limit, server error) or returns an unusable response, the same request is retried once with this backup model. Leave empty to disable.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
                 Text("All text editing runs through this API. Get a key at your provider's dashboard (e.g. console.mistral.ai).")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
+            Section("Shared Prompt") {
+                TextEditor(text: $settings.sharedPrompt)
+                    .font(.system(size: 12))
+                    .frame(minHeight: 90)
+                    .scrollContentBackground(.hidden)
+                Text("Included in every request, before the selected prompt. The default asks the model to return only the requested result, in the original language, without explanations or unsolicited formatting. Edit freely — changes apply when you save.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -315,20 +329,8 @@ final class SettingsWindowController: NSWindowController {
     }
 }
 
-struct SettingsWindowGroup<Content: View>: Scene {
-    private let content: () -> Content
-
-    init(@ViewBuilder content: @escaping () -> Content) {
-        self.content = content
-    }
-
-    var body: some Scene {
-        WindowGroup("SpellCheck Settings") {
-            content()
-        }
-        .windowResizability(.contentSize)
-        .commands {
-            CommandGroup(replacing: .appSettings) {}
-        }
-    }
-}
+/// The app keeps no SwiftUI window scene: Settings and Prompt Editor are
+/// manually managed NSWindowControllers (see SpellCheckApp). A SwiftUI
+/// WindowGroup produced the stray "Loading…" window that macOS state
+/// restoration could raise (and switch Spaces) when the app activated for the
+/// picker — so there is no window scene at all anymore.

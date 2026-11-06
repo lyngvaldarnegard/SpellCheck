@@ -123,10 +123,23 @@ jobs:
           git commit -m "Update appcast for $RELEASE_VERSION" || echo "no appcast changes"
           git push origin HEAD:main
 
+      - name: Prepare user-facing release notes
+        env:
+          RELEASE_VERSION: ${{ github.event.inputs.version || github.ref_name }}
+        run: |
+          # Issue #14: the download page needs real user-facing notes, not
+          # just a Full Changelog link. Notes live in the repo per version.
+          if [ -f "scripts/release-notes/${RELEASE_VERSION}.md" ]; then
+            cp "scripts/release-notes/${RELEASE_VERSION}.md" /tmp/release-notes.md
+          else
+            echo "Release notes file scripts/release-notes/${RELEASE_VERSION}.md is missing" >&2
+            exit 1
+          fi
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             build/SpellCheck-macOS.zip
             appcast.xml
-          generate_release_notes: true
+          body_path: /tmp/release-notes.md

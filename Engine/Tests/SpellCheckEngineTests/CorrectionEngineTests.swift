@@ -9,10 +9,12 @@ private final class FakeBackend: CorrectionBackend, @unchecked Sendable {
     var response: String = "Corrected text"
     var recordedPrompt: String?
     var recordedText: String?
+    var recordedSharedPrompt: String?
 
-    func correct(text: String, prompt: String) async throws -> String {
+    func correct(text: String, prompt: String, sharedPrompt: String) async throws -> String {
         recordedPrompt = prompt
         recordedText = text
+        recordedSharedPrompt = sharedPrompt
         return response
     }
 }
@@ -115,7 +117,7 @@ struct CorrectionEngineTests {
         final class UnconfiguredBackend: CorrectionBackend, @unchecked Sendable {
             let displayName = "Unconfigured"
             let isReady = false
-            func correct(text: String, prompt: String) async throws -> String { "" }
+            func correct(text: String, prompt: String, sharedPrompt: String) async throws -> String { "" }
         }
         let source = FakeSource()
         let recorder = EventRecorder()
@@ -133,7 +135,7 @@ struct CorrectionEngineTests {
         final class ThrowingBackend: CorrectionBackend, @unchecked Sendable {
             let displayName = "Throwing"
             let isReady = true
-            func correct(text: String, prompt: String) async throws -> String {
+            func correct(text: String, prompt: String, sharedPrompt: String) async throws -> String {
                 throw CorrectionError.backendFailed("API request failed with status 401")
             }
         }
@@ -146,6 +148,24 @@ struct CorrectionEngineTests {
         await engine.run(prompt: prompt)
 
         #expect(recorder.events.last == .failed("API request failed with status 401"))
+    }
+
+    @Test func sharedPromptIsPassedToBackend() async {
+        let recorder = EventRecorder()
+        let backend = FakeBackend()
+        let source = FakeSource()
+        let engine = CorrectionEngine(
+            backend: backend,
+            source: source,
+            sharedPrompt: "Always answer in the text's original language.",
+            onEvent: { recorder.record($0) }
+        )
+
+        await engine.run(prompt: prompt)
+
+        #expect(backend.recordedSharedPrompt == "Always answer in the text's original language.")
+        #expect(backend.recordedPrompt == "Fix grammar only")
+        #expect(backend.recordedText == "original text")
     }
 
     @Test func sourceErrorIsReported() async {
@@ -169,7 +189,7 @@ struct CorrectionEngineTests {
 
         await engine.run(prompt: prompt)
 
-        #expect(recorder.events.last == .failed("Could not replace the text in the original app — nothing was changed. Re-select the text and try again."))
+        #expect(recorder.events.last == .replaceFailed("Could not replace the text in the original app — nothing was changed. Re-select the text and try again."))
     }
 
     @Test func changedSelectionIsReportedWithoutTouchingText() async {
@@ -181,7 +201,7 @@ struct CorrectionEngineTests {
 
         await engine.run(prompt: prompt)
 
-        #expect(recorder.events.last == .failed("The original selection is no longer intact in TextEdit, so nothing was replaced. Re-select the text and try again."))
+        #expect(recorder.events.last == .replaceFailed("The original selection is no longer intact in TextEdit, so nothing was replaced. Re-select the text and try again."))
     }
 
     @Test func unverifiedReplacementIsReportedHonestly() async {
@@ -193,7 +213,7 @@ struct CorrectionEngineTests {
 
         await engine.run(prompt: prompt)
 
-        #expect(recorder.events.last == .failed("The correction was pasted into Notion, but SpellCheck could not verify the result — please check the text (⌘Z undoes it if needed). The corrected text is also on the clipboard."))
+        #expect(recorder.events.last == .replaceFailed("The correction was pasted into Notion, but SpellCheck could not verify the result — please check the text (⌘Z undoes it if needed). The corrected text is also on the clipboard."))
     }
 
     @Test func lostTargetIsReportedWithAppName() async {
@@ -205,7 +225,7 @@ struct CorrectionEngineTests {
 
         await engine.run(prompt: prompt)
 
-        #expect(recorder.events.last == .failed("Notion can no longer be used as the target — the original selection is gone. Re-select the text and try again."))
+        #expect(recorder.events.last == .replaceFailed("Notion can no longer be used as the target — the original selection is gone. Re-select the text and try again."))
     }
 
     @Test func busyEngineIgnoresSecondRun() async {
@@ -244,7 +264,9 @@ struct CorrectionEngineTests {
 
 extension EngineEvent {
     fileprivate var isFailure: Bool {
-        if case .failed = self { return true }
-        return false
+        switch self {
+        case .failed, .replaceFailed: return true
+        default: return false
+        }
     }
 }

@@ -354,7 +354,9 @@ const OMEGA_CHECK = [
 
 const GLYPHS = {
   'omega-check': { filled: OMEGA_CHECK },
-  omega: { filled: [parsePath(OMEGA_D)] },
+  // Same full-size, same-scale fitted Ω as omega-check — the checkmark is
+  // simply omitted (issue #7: Ω-only used to render substantially smaller).
+  omega: { filled: [omegaFitted] },
   spellcheck: { filled: [parsePath(SPELLCHECK_D)] },
   checkmark: { stroke: { points: CHECK, width: CHECK_STROKE } },
 };
@@ -476,6 +478,11 @@ for (const style of Object.keys(GLYPHS)) {
   writeSVG(join(ROOT, `App/Resources/MenuBarIcons/svg/${style}.svg`), style);
   writePNG(join(ROOT, `App/Resources/MenuBarIcons/${style}.png`), 22, renderGlyph(style, 22, BLACK));
   writePNG(join(ROOT, `App/Resources/MenuBarIcons/${style}@2x.png`), 44, renderGlyph(style, 44, BLACK));
+  // Review previews: the exact Retina menu-bar pixel size (36px = 18pt @2x)
+  // plus an 8x enlargement so the shapes can be judged without a Mac.
+  const previews = join(ROOT, 'docs/icon-previews');
+  writePNG(join(previews, `${style}-menubar-18pt@2x.png`), 36, renderGlyph(style, 36, BLACK));
+  writePNG(join(previews, `${style}-preview-144px.png`), 144, renderGlyph(style, 144, BLACK));
 }
 
 // app iconset: gradient + white default glyph

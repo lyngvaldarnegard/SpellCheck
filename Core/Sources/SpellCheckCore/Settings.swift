@@ -76,7 +76,13 @@ public struct Settings: Codable, Equatable, Sendable {
     public var hotKey: HotKey
     public var apiKey: String
     public var model: String
+    /// Optional backup model (same provider/credentials) retried once when a
+    /// request to the primary model fails for a temporary or compatibility reason.
+    public var backupModel: String
     public var baseURL: String
+    /// Common instruction included in every request, before the selected
+    /// prompt's instruction. Editable in Settings; persisted like the rest.
+    public var sharedPrompt: String
     public var prompts: [Prompt]
     public var launchAtLogin: Bool
     /// Raw value of the chosen menu-bar icon style (see `MenuBarIconStyle` in the app).
@@ -89,7 +95,9 @@ public struct Settings: Codable, Equatable, Sendable {
         hotKey: HotKey = .default,
         apiKey: String = "",
         model: String = APIProvider.openAI.defaultModel,
+        backupModel: String = "",
         baseURL: String = APIProvider.openAI.baseURL,
+        sharedPrompt: String = Settings.defaultSharedPrompt,
         prompts: [Prompt] = [],
         launchAtLogin: Bool = false,
         menuBarIconStyle: String = Settings.defaultMenuBarIconStyle,
@@ -98,7 +106,9 @@ public struct Settings: Codable, Equatable, Sendable {
         self.hotKey = hotKey
         self.apiKey = apiKey
         self.model = model
+        self.backupModel = backupModel
         self.baseURL = baseURL
+        self.sharedPrompt = sharedPrompt
         self.prompts = prompts
         self.launchAtLogin = launchAtLogin
         self.menuBarIconStyle = menuBarIconStyle
@@ -110,7 +120,11 @@ public struct Settings: Codable, Equatable, Sendable {
         hotKey = try c.decodeIfPresent(HotKey.self, forKey: .hotKey) ?? .default
         apiKey = try c.decodeIfPresent(String.self, forKey: .apiKey) ?? ""
         model = try c.decodeIfPresent(String.self, forKey: .model) ?? APIProvider.openAI.defaultModel
+        backupModel = try c.decodeIfPresent(String.self, forKey: .backupModel) ?? ""
         baseURL = try c.decodeIfPresent(String.self, forKey: .baseURL) ?? APIProvider.openAI.baseURL
+        // Settings files from versions before the shared prompt existed get
+        // the editable default once; later user edits always win.
+        sharedPrompt = try c.decodeIfPresent(String.self, forKey: .sharedPrompt) ?? Settings.defaultSharedPrompt
         let legacy = try decoder.container(keyedBy: LegacyCodingKeys.self)
         if let prompts = (try? c.decodeIfPresent([LossyPrompt].self, forKey: .prompts)) ?? nil {
             // Decode lossily: a single malformed or renamed prompt entry must
@@ -129,7 +143,7 @@ public struct Settings: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case hotKey, apiKey, model, baseURL, prompts
+        case hotKey, apiKey, model, backupModel, baseURL, sharedPrompt, prompts
         case launchAtLogin, menuBarIconStyle, didSeedDefaultPrompts
     }
 
@@ -139,6 +153,15 @@ public struct Settings: Codable, Equatable, Sendable {
 
     public static let `default` = Settings()
     public static let defaultMenuBarIconStyle = "omega-check"
+
+    /// Editable default for the shared prompt: asks for only the requested
+    /// result, in the original language, without unsolicited formatting.
+    public static let defaultSharedPrompt = """
+    Follow the instruction exactly. Respond in the text's original language \
+    unless the instruction explicitly asks for a translation or another language. \
+    Return only the finished text — no explanations, preambles, apologies, \
+    or artificial delimiters around it.
+    """
 
     /// One-time migration for settings written by earlier versions:
     /// moves the pre-v2 default hot key (⌥⌘K) to the new default (⌥L) and

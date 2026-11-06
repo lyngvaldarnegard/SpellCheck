@@ -22,12 +22,12 @@ public struct OpenAICompatibleBackend: CorrectionBackend {
         self.baseURL = baseURL
     }
 
-    public func correct(text: String, prompt: String) async throws -> String {
+    public func correct(text: String, prompt: String, sharedPrompt: String) async throws -> String {
         guard isReady else { throw CorrectionError.notConfigured }
         guard let url = APIEndpoint.chatCompletionsURL(baseURL) else {
             throw CorrectionError.backendFailed("The API base URL is not valid")
         }
-        let messages = PromptBuilder.messages(prompt: prompt, text: text)
+        let messages = PromptBuilder.messages(prompt: prompt, sharedPrompt: sharedPrompt, text: text)
         let payload = ChatCompletion.Request(model: model.isEmpty ? APIProvider.openAI.defaultModel : model, messages: messages)
 
         var request = URLRequest(url: url)
@@ -42,13 +42,88 @@ public struct OpenAICompatibleBackend: CorrectionBackend {
             throw CorrectionError.backendFailed("Invalid response from the API server")
         }
         guard (200..<300).contains(http.statusCode) else {
-            let body = String(data: data, encoding: .utf8).map { " \($0)" } ?? ""
-            throw CorrectionError.backendFailed("API request failed with status \(http.statusCode)\(body)")
+            throw CorrectionError.http(status: http.statusCode, message: Self.errorMessage(from: data))
         }
-        let decoded = try JSONDecoder().decode(ChatCompletion.Response.self, from: data)
-        guard let content = decoded.choices.first?.message.content, !content.isEmpty else {
-            throw CorrectionError.emptyResponse
+        do {
+            let decoded = try JSONDecoder().decode(ChatCompletion.Response.self, from: data)
+            guard let content = decoded.contentText, !content.isEmpty else {
+                throw CorrectionError.emptyResponse
+            }
+            return content
+        } catch let error as CorrectionError {
+            throw error
+        } catch {
+            // The provider answered 2xx but with a payload SpellCheck cannot
+            // read (e.g. a model or endpoint that is not fully OpenAI-compatible).
+            // Surface an actionable error instead of a raw decoding failure.
+            throw CorrectionError.unusableResponse(
+                "The response from the model “\(model)” could not be read — it is not in the expected format. " +
+                "Check the model name and base URL in Settings, or try a different model."
+            )
         }
-        return content
+    }
+
+    /// Short, sanitized error summary from a provider error body. Never
+    /// includes the full payload (it could contain echoed user text).
+    static func errorMessage(from data: Data) -> String {
+        struct ErrorPayload: Decodable {
+            struct ErrorBody: Decodable {
+                let message: String?
+                let code: String?
+            }
+            let error: ErrorBody?
+            let message: String?
+            let detail: String?
+        }
+        guard let payload = try? JSONDecoder().decode(ErrorPayload.self, from: data) else {
+            return "The API request failed"
+        }
+        let body = payload.error
+        var parts: [String] = []
+        if let message = body?.message ?? payload.message ?? payload.detail, !message.isEmpty {
+            parts.append(String(message.prefix(200)))
+        }
+        if let code = body?.code, !code.isEmpty {
+            parts.append("(\(code))")
+        }
+        return parts.isEmpty ? "The API request failed" : parts.joined(separator: " ")
+    }
+}
+
+/// Retries the same request (shared prompt, selected prompt and text) once on
+/// a backup model when the primary model fails for a temporary or
+/// compatibility-related reason (capacity, rate limit, server failure, timeout,
+/// empty or unreadable response). Never loops: at most one attempt per model,
+/// each bounded by the backend's own request timeout. If both fail, the error
+/// describes both attempts so the underlying problem stays visible.
+public struct FallbackBackend: CorrectionBackend {
+    private let primary: any CorrectionBackend
+    private let backup: (model: String, backend: any CorrectionBackend)?
+
+    public init(primary: any CorrectionBackend, backupModel: String, makeBackup: (String) -> any CorrectionBackend) {
+        self.primary = primary
+        let trimmed = backupModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.backup = trimmed.isEmpty ? nil : (trimmed, makeBackup(trimmed))
+    }
+
+    public var displayName: String { primary.displayName }
+    public var isReady: Bool { primary.isReady }
+
+    public func correct(text: String, prompt: String, sharedPrompt: String) async throws -> String {
+        do {
+            return try await primary.correct(text: text, prompt: prompt, sharedPrompt: sharedPrompt)
+        } catch {
+            guard let backup, backup.backend.isReady, FallbackPolicy.shouldFallback(after: error) else {
+                throw error
+            }
+            do {
+                return try await backup.backend.correct(text: text, prompt: prompt, sharedPrompt: sharedPrompt)
+            } catch let backupError {
+                throw CorrectionError.backendFailed(
+                    "The primary model failed: \(CorrectionEngine.message(for: error))\n" +
+                    "The backup model “\(backup.model)” also failed: \(CorrectionEngine.message(for: backupError))"
+                )
+            }
+        }
     }
 }

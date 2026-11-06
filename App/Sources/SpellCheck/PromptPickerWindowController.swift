@@ -23,8 +23,15 @@ final class PromptPickerWindowController: NSObject, NSWindowDelegate {
 
     /// Called with the chosen prompt. The picker closes itself first.
     var onChoose: ((Prompt) -> Void)?
-    /// Called when the picker is dismissed without a choice (Escape).
+    /// Called when the picker is dismissed without a choice (Escape, X button).
     var onCancel: (() -> Void)?
+    /// Called when the user clicks outside the picker. The click itself goes
+    /// to wherever the user clicked, so the target app is NOT refocused and
+    /// nothing is edited — the picker just goes away.
+    var onDismiss: (() -> Void)?
+
+    private var globalMouseMonitor: Any?
+    private var localMouseMonitor: Any?
 
     init(prompts: [Prompt]) {
         self.prompts = prompts
@@ -131,6 +138,7 @@ final class PromptPickerWindowController: NSObject, NSWindowDelegate {
         searchField.stringValue = ""
         positionPanel()
         makeKeyAndFocus()
+        installOutsideClickMonitors()
     }
 
     /// The picker must own the keyboard the moment it appears, without the
@@ -188,6 +196,7 @@ final class PromptPickerWindowController: NSObject, NSWindowDelegate {
     }
 
     private func close(then completion: (() -> Void)? = nil) {
+        removeOutsideClickMonitors()
         panel.orderOut(nil)
         completion?()
     }
@@ -195,6 +204,55 @@ final class PromptPickerWindowController: NSObject, NSWindowDelegate {
     private func cancel() {
         close(then: onCancel)
     }
+
+    // MARK: Outside-click dismissal (transient popup behavior)
+
+    /// The picker behaves like FixKey's transient popup: clicking anywhere
+    /// outside it dismisses it without running a prompt or touching the text.
+    /// The click is NOT swallowed — it goes on to whatever the user clicked
+    /// (which also means focus follows the user's click, so the original app
+    /// is not forcibly refocused).
+    private func installOutsideClickMonitors() {
+        removeOutsideClickMonitors()
+        globalMouseMonitor = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        ) { [weak self] _ in
+            self?.dismissIfClickedOutside()
+        }
+        localMouseMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        ) { [weak self] event in
+            self?.dismissIfClickedOutside()
+            return event
+        }
+    }
+
+    private func removeOutsideClickMonitors() {
+        if let globalMouseMonitor { NSEvent.removeMonitor(globalMouseMonitor) }
+        if let localMouseMonitor { NSEvent.removeMonitor(localMouseMonitor) }
+        globalMouseMonitor = nil
+        localMouseMonitor = nil
+    }
+
+    private func dismissIfClickedOutside() {
+        guard isPanelVisible, !panel.frame.contains(NSEvent.mouseLocation) else { return }
+        close(then: onDismiss)
+    }
+
+    private var isPanelVisible: Bool { panel.isVisible }
+
+    /// Testing hook: dismisses as an outside click would.
+    func dismissFromOutsideClickForTesting() {
+        close(then: onDismiss)
+    }
+
+    /// Testing hook: whether a screen-space point lies outside the panel.
+    func isPointOutsidePanelForTesting(_ point: NSPoint) -> Bool {
+        !panel.frame.contains(point)
+    }
+
+    /// Testing hook: the panel's screen frame.
+    var panelFrameForTesting: NSRect { panel.frame }
 
     // MARK: Selection
 

@@ -27,6 +27,54 @@ struct SettingsTests {
         #expect(Settings.defaultMenuBarIconStyle == "omega-check")
     }
 
+    // MARK: Shared prompt + backup model (issues #9, #10)
+
+    @Test func defaultSharedPromptAsksForResultOnlyInOriginalLanguage() {
+        let shared = Settings.defaultSharedPrompt
+        #expect(shared.contains("original language"))
+        #expect(shared.contains("translation"))
+        #expect(shared.lowercased().contains("only the finished text"))
+        #expect(Settings.default.sharedPrompt == shared)
+        #expect(Settings.default.backupModel.isEmpty)
+    }
+
+    @Test func sharedPromptAndBackupModelRoundTripThroughJSON() throws {
+        var settings = Settings.default
+        settings.apiKey = "sk-test"
+        settings.sharedPrompt = "Svar alltid på norsk."
+        settings.backupModel = "mistral-small-latest"
+        settings.prompts = [Prompt(name: "Pirate", prompt: "Rewrite as a pirate")]
+        let decoded = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(settings))
+        #expect(decoded == settings)
+        #expect(decoded.sharedPrompt == "Svar alltid på norsk.")
+        #expect(decoded.backupModel == "mistral-small-latest")
+        #expect(decoded.prompts.first?.name == "Pirate")
+    }
+
+    @Test func settingsFileWithoutSharedPromptKeyGetsEditableDefault() throws {
+        // A settings.json written by a version before the shared prompt existed.
+        var dict = try JSONSerialization.jsonObject(with: JSONEncoder().encode(Settings.default)) as? [String: Any] ?? [:]
+        dict.removeValue(forKey: "sharedPrompt")
+        dict.removeValue(forKey: "backupModel")
+        dict["apiKey"] = "sk-keep-me"
+        let data = try JSONSerialization.data(withJSONObject: dict)
+        let decoded = try JSONDecoder().decode(Settings.self, from: data)
+        #expect(decoded.sharedPrompt == Settings.defaultSharedPrompt)
+        #expect(decoded.backupModel.isEmpty)
+        #expect(decoded.apiKey == "sk-keep-me")
+    }
+
+    @Test func editedSharedPromptSurvivesMigration() throws {
+        var settings = Settings.default
+        settings.sharedPrompt = "Always keep legal terms in full."
+        settings.backupModel = "mistral-small-latest"
+        let migrated = settings.migrated()
+        #expect(migrated.sharedPrompt == "Always keep legal terms in full.")
+        #expect(migrated.backupModel == "mistral-small-latest")
+        let decoded = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(migrated))
+        #expect(decoded.sharedPrompt == "Always keep legal terms in full.")
+    }
+
     @Test func legacySettingsJSONWithoutMenuBarIconStyleStillDecodes() throws {
         var dict = try JSONSerialization.jsonObject(with: JSONEncoder().encode(Settings.default)) as? [String: Any] ?? [:]
         dict.removeValue(forKey: "menuBarIconStyle")

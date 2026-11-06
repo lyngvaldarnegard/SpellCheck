@@ -1,7 +1,9 @@
 # SpellCheck — Project Handoff
 
-Last updated: 2026-11-06, after **v0.2.5** (v0.2.3 workflow fixes + v0.2.4
-marker-echo fix + prompt reordering). Repo:
+Last updated: 2026-11-06, after the **v0.2.6** session (shared prompt,
+backup-model fallback, lenient GLM-style response parsing, outside-click
+picker dismissal, no replacement-failure popup, Ω-only icon at full scale,
+no stray Loading window). Repo:
 https://github.com/lyngvaldarnegard/SpellCheck (default branch `main`,
 **not protected** on purpose).
 
@@ -39,8 +41,8 @@ Three SwiftPM packages (`// swift-tools-version:6.0`, `platforms: [.macOS(.v13)]
 
 | Package | Target | Role | Tests |
 |---|---|---|---|
-| `Core/` | `SpellCheckCore` (lib) | Platform-independent: `TextScope`/`TextScopeExtractor` (unchanged), `HotKey` (default **⌥L**; any shortcut with ≥1 modifier is registerable — the Cmd/Ctrl requirement is gone), `PromptBuilder` (prompt-only: `messages(prompt:text:)`), `Settings` (Codable; v1→v2 migration in `init(from:)` + `migrated()`: legacy `customPrompts` → `prompts`, ⌥⌘K → ⌥L, one-time seeding of `Prompt.defaultPrompts`), `Prompt`/`PromptIcon` (editable prompt model + glyphs), `APIProvider` presets (baseURL+model always paired), `CorrectionBackend` protocol + `ResponseCleaner`. The rule-based offline corrector, `BuiltinAction`, `BackendKind` and `showConfirmation` were **removed** (v2: API-only, no confirmation) | 48 tests, Linux-runnable |
-| `Engine/` | `SpellCheckEngine` (lib) | `CorrectionEngine` actor (grab→backend→replace — **no confirm step**; `run(prompt:)` grabs itself, `run(prompt:on:)` uses text captured earlier by the picker; `GrabbedText.replace` now **throws** with typed errors incl. `targetUnavailable(appName)`), `TextSource` protocol, `OpenAICompatibleBackend` (chat completions, 120 s timeout), `SettingsStore` actor (JSON in Application Support/SpellCheck/settings.json), `APIEndpoint` (now requires http(s)), `ModelCatalog` (`GET /models` + `parseModelIDs`) | 27 tests, Linux-runnable |
+| `Core/` | `SpellCheckCore` (lib) | Platform-independent: `TextScope`/`TextScopeExtractor` (unchanged), `HotKey` (default **⌥L**; any shortcut with ≥1 modifier is registerable — the Cmd/Ctrl requirement is gone), `PromptBuilder` (`messages(prompt:sharedPrompt:text:)`: system = fixed framing + shared prompt + selected prompt + output rules; user = marked text; `ChatCompletion.Response` content decodes leniently — plain string, part arrays, or null), `Settings` (Codable; v1→v2 migration in `init(from:)` + `migrated()`: legacy `customPrompts` → `prompts`, ⌥⌘K → ⌥L, one-time seeding of `Prompt.defaultPrompts`; NEW keys `sharedPrompt` — seeded once with the editable `Settings.defaultSharedPrompt` when absent — and `backupModel`, default empty), `Prompt`/`PromptIcon` (editable prompt model + glyphs), `APIProvider` presets (baseURL+model always paired), `CorrectionBackend` protocol (`correct(text:prompt:sharedPrompt:)`) + `CorrectionError` (`.http(status:message:)`, `.unusableResponse`, `isRetryableWithBackup`) + `FallbackPolicy` + `ResponseCleaner`. The rule-based offline corrector, `BuiltinAction`, `BackendKind` and `showConfirmation` were **removed** (v2: API-only, no confirmation) | 68 tests, Linux-runnable |
+| `Engine/` | `SpellCheckEngine` (lib) | `CorrectionEngine` actor (grab→backend→replace — **no confirm step**; `run(prompt:)` grabs itself, `run(prompt:on:)` uses text captured earlier by the picker; `GrabbedText.replace` now **throws** with typed errors incl. `targetUnavailable(appName)`; replacement failures emit `EngineEvent.replaceFailed` — menu-bar only, NO alert popup; `sharedPrompt` passed through to the backend), `TextSource` protocol, `OpenAICompatibleBackend` (chat completions, 120 s timeout, lenient content decoding, sanitized short error bodies — never the full response), `FallbackBackend` (ONE retry on the backup model for retryable errors: 408/429/5xx, timeouts, empty/unusable response; combined error naming both models; never retries a paste), `SettingsStore` actor (JSON in Application Support/SpellCheck/settings.json), `APIEndpoint` (now requires http(s)), `ModelCatalog` (`GET /models` + `parseModelIDs`) | 43 tests, Linux-runnable |
 | `App/` | `SpellCheck` (executable) + `SpellCheckTests` | macOS-only: `SpellCheckApp` (@main + AppDelegate: hot key → grab immediately → show picker → run chosen prompt on the pre-grabbed text; `saveSettings` persists then applies; SMAppService launch-at-login; `ErrorPresenter` shows real alerts for every failure — hot-key registration, accessibility, API, replacement), `HotKeyMonitor` (Carbon `RegisterEventHotKey`; `start()` returns a failure reason instead of failing silently; needs **no** Input Monitoring), `AccessibilityTextSource` (layered grab: `kAXSelectedTextAttribute` on focused element → descendant BFS → `kAXValue`+`kAXSelectedTextRange` → clipboard ⌘C fallback; replacement: re-activate captured app by pid, AX write with readback verification, clipboard-paste fallback with pasteboard save/restore), `PromptPickerWindowController` (FixKey-style dark non-activating panel: search field, ↑/↓/Enter/Esc, click-to-run, empty state), `PromptEditorWindowController` + SwiftUI (two-pane dark editor, CRUD, ⌘S), `SettingsView` (API-only, presets, fetch models, ⌘S + Saved indicator), `StatusBarController` (menu: Open Prompt Picker, Prompt Editor…, Settings…, Check for Updates…, Quit), `UpdaterController` (Sparkle; active only with `SUPublicEDKey`) | CI on macos-15 |
 
 Local path dependencies are referenced by **directory name**: `package: "Core"`, `package: "Engine"`.
@@ -52,6 +54,52 @@ original app, verifies the write) → status event (+ alert on failure).
 
 ## 3. Current state
 
+- **v0.2.6 changes (this session, all covered by new tests unless noted):**
+  1. **Shared prompt (issue #9)**: `Settings.sharedPrompt`, its own Settings
+     section (TextEditor), sent in every request BEFORE the selected prompt
+     (system message = framing + shared + instruction + output rules; user
+     message = marked text). Default asks for result-only, original language,
+     no unsolicited quotes/Markdown/fences; explicitly requested formats
+     (bullets, Markdown, translation) still work. Seeded once for existing
+     settings files (decodeIfPresent fallback); user edits always win.
+  2. **Backup model + fallback (issue #10)**: `Settings.backupModel`, wired
+     via `FallbackBackend` in `AppDelegate.makeBackend`. One retry on the
+     backup for 408/429/5xx, URLError timeouts/connection loss, empty or
+     unusable responses. Auth/config errors (401/400/notConfigured) do NOT
+     fall back. Both-fail error names both models. Paste is never retried.
+  3. **GLM-style parsing (issue #11)**: response `content` now decodes as a
+     plain string, an OpenAI-style parts array, or null; HTTP error bodies are
+     summarized short+sanitized (message + code only, 200-char cap — no
+     full-response leakage). Undecodable 2xx payloads throw
+     `CorrectionError.unusableResponse` with an actionable message instead of
+     a raw "data couldn't be read" decoding error. Actual GLM 5.3 Flash
+     compatibility is NOT verified against the provider — no model ID was
+     invented; the user must test.
+  4. **Outside-click dismissal (issue #15)**: global+local NSEvent mouse
+     monitors while the picker is shown; a click outside closes it via
+     `onDismiss` (NOT `onCancel` — no refocus of the target app, the click
+     itself moves focus; nothing is edited). Monitors removed on close.
+  5. **No replacement-failure popup (issues #5/#4)**: replacement errors
+     (replaceFailed/selectionChanged/unverified/targetUnavailable) emit
+     `EngineEvent.replaceFailed` — tooltip/status only. Real API/config/
+     permission errors still alert via `.failed`.
+  6. **Icons (issue #7)**: `omega` style now uses the SAME fitted full-size Ω
+     as `omega-check` (it previously rendered the raw unfitted path, ~30%
+     smaller). Previews committed in `docs/icon-previews/` (18pt@2x real
+     menu-bar pixels + 144px enlargements) — real-Mac visual approval is the
+     user's decision.
+  7. **Loading window / Space switch (issue #12)**: the SwiftUI
+     `SettingsWindowGroup` (whose "Loading…" placeholder window macOS state
+     restoration could raise when the app activated) is GONE — the app's only
+     scene is a never-opened `Settings { EmptyView }`; all real windows are
+     manually managed NSWindowControllers.
+  8. **Open windows raised by ⌥L (issue #12, low priority, done last)**: while
+     the picker session is up, other SpellCheck windows get
+     `level = -1` (below other apps' normal windows) and are restored to
+     `.normal` when the session ends. Keyboard focus is untouched.
+  9. **Release notes (issue #14)**: `release.yml` now REQUIRES
+     `scripts/release-notes/vX.Y.Z.md` and publishes it as the release body
+     (no more Full-Changelog-only pages); v0.2.6 notes written in Norwegian.
 - Latest release: **v0.2.5** (universal, ad-hoc signed, Sparkle-signed
   update; contains everything from v0.2.4, which was never published
   separately). v0.2.4 = strip model-echoed <<< / >>> markers in
@@ -122,7 +170,7 @@ original app, verifies the write) → status event (+ alert on failure).
   — the user should confirm this works when v0.2.2+ ships.
 - The user's v1 settings migrated in place (API key kept, ⌥⌘K → ⌥L, legacy
   customPrompts → prompts, defaults seeded once).
-- Tests: Core 58/58, Engine 33/33 (Linux); macOS CI + Release green for
+- Tests: Core 68/68, Engine 43/43 (Linux, this session); macOS CI + Release green for
   v0.2.5 (the shipped zip was extracted, re-verified and smoke-launched).
   NOTE 05-06.11.2026: GitHub's macOS runner pool was congested for hours
   ("job was not acquired by Runner") — several v0.2.4/v0.2.5 release

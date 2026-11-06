@@ -12,14 +12,26 @@ struct SpellCheckApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        SettingsWindowGroup {
-            if let controller = appDelegate.settingsController {
-                SettingsView(controller: controller)
-            } else {
-                Text("Loading…")
-            }
+        // No SwiftUI window scene: the Settings and Prompt Editor windows are
+        // managed manually by AppDelegate as NSWindowControllers. A SwiftUI
+        // WindowGroup here produced a stray "Loading…" window that macOS state
+        // restoration could bring forward (and switch Spaces) when the app
+        // activated for the picker (issue #12).
+        Settings {
+            EmptySettingsScene()
+        }
+        .commands {
+            CommandGroup(replacing: .appSettings) {}
         }
     }
+}
+
+/// Placeholder for the never-opened Settings scene (all real windows are
+/// NSWindowControllers created in AppDelegate). Without a scene the SwiftUI
+/// App would launch no runloop-managed windows at all — this keeps the
+/// @main struct valid without ever showing a window.
+private struct EmptySettingsScene: View {
+    var body: some View { EmptyView() }
 }
 
 @MainActor
@@ -34,6 +46,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let textSource = AccessibilityTextSource()
     private var pickerController: PromptPickerWindowController?
     private var pendingGrab: GrabbedText?
+    /// SpellCheck's own windows temporarily lowered below other apps' windows
+    /// while the picker is up, so activating SpellCheck for keyboard focus
+    /// does not raise Settings / Prompt Editor over the user's work.
+    private var loweredWindows: [NSWindow] = []
     private(set) var settings: AppSettings = .default
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -78,6 +94,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         engine = CorrectionEngine(
             backend: makeBackend(from: settings),
             source: textSource,
+            sharedPrompt: settings.sharedPrompt,
             onEvent: { [weak self] event in
                 Task { @MainActor in self?.handle(event) }
             }
@@ -142,6 +159,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         engine = CorrectionEngine(
             backend: makeBackend(from: newSettings),
             source: textSource,
+            sharedPrompt: newSettings.sharedPrompt,
             onEvent: { [weak self] event in
                 Task { @MainActor in self?.handle(event) }
             }
@@ -165,11 +183,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func makeBackend(from settings: AppSettings) -> any CorrectionBackend {
-        OpenAICompatibleBackend(
-            apiKey: settings.apiKey,
-            model: settings.model,
-            baseURL: settings.baseURL
-        )
+        let apiKey = settings.apiKey
+        let baseURL = settings.baseURL
+        return FallbackBackend(
+            primary: OpenAICompatibleBackend(apiKey: apiKey, model: settings.model, baseURL: baseURL),
+            backupModel: settings.backupModel
+        ) { model in
+            OpenAICompatibleBackend(apiKey: apiKey, model: model, baseURL: baseURL)
+        }
     }
 
     // MARK: Hot key
@@ -200,11 +221,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let picker = PromptPickerWindowController(prompts: self.settings.prompts)
                 picker.onChoose = { [weak self] prompt in
                     self?.pickerController = nil
+                    self?.endPickerSession()
                     self?.runPrompt(prompt)
                 }
                 picker.onCancel = { [weak self] in
                     guard let self else { return }
                     self.pickerController = nil
+                    self.endPickerSession()
                     let grabbed = self.pendingGrab
                     self.pendingGrab = nil
                     // Give the keyboard back to the app the text came from.
@@ -212,7 +235,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         Task { await grabbed.refocus?() }
                     }
                 }
+                picker.onDismiss = { [weak self] in
+                    // Clicked outside: the click itself already moved focus
+                    // wherever the user clicked — do not refocus or edit.
+                    self?.pickerController = nil
+                    self?.pendingGrab = nil
+                    self?.endPickerSession()
+                }
                 self.pickerController = picker
+                self.lowerOwnWindowsForPicker()
                 picker.show()
             } catch {
                 ErrorPresenter.show(title: "SpellCheck", message: CorrectionEngine.message(for: error))
@@ -226,10 +257,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task { await engine.run(prompt: prompt, on: grabbed) }
     }
 
+    // MARK: Picker session vs. other SpellCheck windows
+
+    /// While the picker is up, SpellCheck must own the keyboard — which means
+    /// activating the app. Activation would normally raise ALL of SpellCheck's
+    /// visible windows over the user's work; instead, other SpellCheck
+    /// windows are temporarily put at a window level below other apps' normal
+    /// windows, so they stay put. Keyboard focus is untouched.
+    private func lowerOwnWindowsForPicker() {
+        let own = [settingsController?.window, promptEditorController?.window]
+            .compactMap { $0 }
+            .filter { $0.isVisible }
+        for window in own {
+            window.level = NSWindow.Level(rawValue: -1)
+        }
+        loweredWindows = own
+    }
+
+    private func endPickerSession() {
+        for window in loweredWindows {
+            window.level = .normal
+        }
+        loweredWindows = []
+    }
+
     // MARK: Events
 
     private func handle(_ event: EngineEvent) {
         statusBarController?.handle(event)
+        // Replacement failures (including uncertain readback) are menu-bar
+        // only — the user asked for no intrusive popup there and can retry
+        // manually. Real API/configuration/permission errors still alert.
         if case .failed(let message) = event {
             ErrorPresenter.show(title: "SpellCheck", message: message)
         }

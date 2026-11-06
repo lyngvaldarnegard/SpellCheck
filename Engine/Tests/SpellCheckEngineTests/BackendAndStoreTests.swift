@@ -194,3 +194,128 @@ struct SettingsStoreTests {
         #expect(backupData == Data("{\"apiKey\": \"sk-".utf8))
     }
 }
+
+// MARK: - Fallback model (issues #10/#11)
+
+private final class ScriptedBackend: CorrectionBackend, @unchecked Sendable {
+    let displayName: String
+    var isReady = true
+    var error: (any Error)?
+    var response = "result"
+    private(set) var calls: [(text: String, prompt: String, shared: String)] = []
+
+    init(displayName: String, error: (any Error)? = nil) {
+        self.displayName = displayName
+        self.error = error
+    }
+
+    func correct(text: String, prompt: String, sharedPrompt: String) async throws -> String {
+        calls.append((text, prompt, sharedPrompt))
+        if let error { throw error }
+        return response
+    }
+}
+
+struct FallbackBackendTests {
+
+    @Test func retryablePrimaryFailureFallsBackWithSameRequest() async throws {
+        let primary = ScriptedBackend(
+            displayName: "primary",
+            error: CorrectionError.http(status: 429, message: "Not enough capacity available for this request. (backend_out_of_capacity)")
+        )
+        let backup = ScriptedBackend(displayName: "backup")
+        backup.response = "backup result"
+        let backend = FallbackBackend(primary: primary, backupModel: "mistral-small-latest") { _ in backup }
+
+        let result = try await backend.correct(text: "some text", prompt: "Fix grammar", sharedPrompt: "keep language")
+        #expect(result == "backup result")
+        #expect(primary.calls.count == 1)
+        #expect(backup.calls.count == 1)
+        // The backup gets the exact same shared prompt, prompt and text.
+        #expect(backup.calls[0].text == "some text")
+        #expect(backup.calls[0].prompt == "Fix grammar")
+        #expect(backup.calls[0].shared == "keep language")
+    }
+
+    @Test func unusableResponseFallsBack() async throws {
+        let primary = ScriptedBackend(displayName: "primary", error: CorrectionError.unusableResponse("bad format"))
+        let backup = ScriptedBackend(displayName: "backup")
+        let backend = FallbackBackend(primary: primary, backupModel: "m") { _ in backup }
+        let result = try await backend.correct(text: "t", prompt: "p", sharedPrompt: "s")
+        #expect(result == "result")
+        #expect(backup.calls.count == 1)
+    }
+
+    @Test func authenticationFailureDoesNotFallBack() async {
+        let primary = ScriptedBackend(displayName: "primary", error: CorrectionError.http(status: 401, message: "bad key"))
+        let backup = ScriptedBackend(displayName: "backup")
+        let backend = FallbackBackend(primary: primary, backupModel: "m") { _ in backup }
+
+        await #expect(throws: CorrectionError.self) {
+            _ = try await backend.correct(text: "t", prompt: "p", sharedPrompt: "s")
+        }
+        #expect(backup.calls.isEmpty)
+    }
+
+    @Test func bothFailuresDescribeBothAttempts() async {
+        let primary = ScriptedBackend(displayName: "primary", error: CorrectionError.http(status: 503, message: "down"))
+        let backup = ScriptedBackend(displayName: "backup", error: CorrectionError.http(status: 429, message: "rate limited"))
+        let backend = FallbackBackend(primary: primary, backupModel: "mistral-small-latest") { _ in backup }
+
+        do {
+            _ = try await backend.correct(text: "t", prompt: "p", sharedPrompt: "s")
+            Issue.record("expected a combined error")
+        } catch let error as CorrectionError {
+            guard case .backendFailed(let message) = error else {
+                Issue.record("expected backendFailed, got \(error)")
+                return
+            }
+            #expect(message.contains("mistral-small-latest"))
+            #expect(message.contains("down"))
+            #expect(message.contains("rate limited"))
+        } catch {
+            Issue.record("unexpected error type")
+        }
+    }
+
+    @Test func emptyBackupModelDisablesFallback() async throws {
+        let primary = ScriptedBackend(displayName: "primary", error: CorrectionError.http(status: 500, message: "boom"))
+        // makeBackup must never even be asked for a backend
+        let backend = FallbackBackend(primary: primary, backupModel: "   ") { _ in
+            Issue.record("backup backend created for an empty backup model")
+            return ScriptedBackend(displayName: "backup")
+        }
+        await #expect(throws: CorrectionError.self) {
+            _ = try await backend.correct(text: "t", prompt: "p", sharedPrompt: "s")
+        }
+    }
+
+    @Test func timeoutFallsBack() async throws {
+        let primary = ScriptedBackend(displayName: "primary", error: URLError(.timedOut))
+        let backup = ScriptedBackend(displayName: "backup")
+        let backend = FallbackBackend(primary: primary, backupModel: "m") { _ in backup }
+        let result = try await backend.correct(text: "t", prompt: "p", sharedPrompt: "s")
+        #expect(result == "result")
+    }
+}
+
+struct BackendErrorParsingTests {
+
+    @Test func errorMessageExtractsProviderMessageAndCode() {
+        let body = Data("""
+        {"error":{"message":"Not enough capacity available for this request.","code":"backend_out_of_capacity"}}
+        """.utf8)
+        let message = OpenAICompatibleBackend.errorMessage(from: body)
+        #expect(message.contains("Not enough capacity available"))
+        #expect(message.contains("backend_out_of_capacity"))
+    }
+
+    @Test func errorMessageHandlesUnparseableBody() {
+        #expect(OpenAICompatibleBackend.errorMessage(from: Data("gateway timeout".utf8)) == "The API request failed")
+    }
+
+    @Test func httpErrorCarriesStatusForFallbackDecisions() {
+        let error = CorrectionError.http(status: 429, message: "capacity")
+        #expect(error.isRetryableWithBackup)
+    }
+}

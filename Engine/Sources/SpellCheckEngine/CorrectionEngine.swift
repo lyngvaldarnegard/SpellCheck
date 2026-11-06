@@ -6,7 +6,12 @@ public enum EngineEvent: Sendable, Equatable {
     case idle
     case working(String)
     case succeeded(String)
+    /// Alert-worthy failure (API, configuration, permission, save errors).
     case failed(String)
+    /// The replacement could not be issued or verified in the target app.
+    /// Reported in the menu bar only — the user asked for no intrusive popup
+    /// here, and a retry is left to the user. Never triggers another paste.
+    case replaceFailed(String)
 }
 
 /// Orchestrates one AI edit: grab text, ask the backend, then swap the result
@@ -17,6 +22,7 @@ public actor CorrectionEngine {
 
     private let backend: any CorrectionBackend
     private let source: any TextSource
+    private let sharedPrompt: String
     private let eventHandler: EventHandler
 
     private var busy = false
@@ -27,10 +33,12 @@ public actor CorrectionEngine {
     public init(
         backend: any CorrectionBackend,
         source: any TextSource,
+        sharedPrompt: String = "",
         onEvent: @escaping EventHandler = { _ in }
     ) {
         self.backend = backend
         self.source = source
+        self.sharedPrompt = sharedPrompt
         self.eventHandler = onEvent
     }
 
@@ -70,7 +78,7 @@ public actor CorrectionEngine {
             eventHandler(.failed("There is no text to work on"))
             return
         }
-        let response = try await backend.correct(text: original, prompt: prompt.prompt)
+        let response = try await backend.correct(text: original, prompt: prompt.prompt, sharedPrompt: sharedPrompt)
         let corrected = ResponseCleaner.clean(response, input: original)
         guard !corrected.isEmpty else {
             eventHandler(.failed("The API returned an empty result"))
@@ -85,7 +93,7 @@ public actor CorrectionEngine {
             try await grabbed.replace(corrected)
             eventHandler(.succeeded(corrected))
         } catch {
-            eventHandler(.failed(Self.message(for: error)))
+            eventHandler(.replaceFailed(Self.message(for: error)))
         }
     }
 
@@ -96,6 +104,10 @@ public actor CorrectionEngine {
                 return "No API key configured — add one in SpellCheck Settings"
             case .emptyResponse:
                 return "The API returned an empty result"
+            case .http(let status, let message):
+                return "The API request failed with status \(status): \(message)"
+            case .unusableResponse(let message):
+                return message
             case .backendFailed(let message):
                 return message
             case .cancelled:
