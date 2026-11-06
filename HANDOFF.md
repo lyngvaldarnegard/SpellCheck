@@ -280,12 +280,21 @@ release after v0.2.10 must be tagged `v1.0.0` — not v0.2.11. All release
 notes, appcast and notes files follow the tag as usual.
 
 **v1.0.0 planned content — updated default prompts (user instruction,
-06.11.2026)**: the user will provide the new default prompt list (titles +
-text); replace `Prompt.defaultPrompts` with it. Existing installs keep
-their prompts untouched (user's explicit choice): the one-time seeding guard
-(`didSeedDefaultPrompts`) already ensures a user's list is NEVER overwritten —
-new defaults apply only to fresh installs. Do NOT ship v1.0.0 before the
-user's prompt list has been received and wired in.
+06.11.2026)**: the user's new default prompt list is PREPARED on the draft
+branch **`vibe/v1-default-prompts`** (commit 3bb55f1) — do NOT ship v1.0.0
+without merging it. The draft: 27 prompts from the user's saved list;
+Allvit, Napoloen-as-named and Juss dropped (Juss is Norway-specific);
+Napoloen's text lives on as **Humanize** (Norwegian sections removed);
+all translation prompts (incl. Pinyin to Chinese) at the bottom; every
+Norwegian-language section removed from prompt bodies (only the
+language names Bokmål/Nynorsk remain, in the two Norwegian translation
+prompts the user dictated verbatim); Make Shorter's "REFERENCES" typos
+fixed. Existing installs keep their prompts untouched (user's explicit
+choice): the one-time seeding guard (`didSeedDefaultPrompts`) already
+ensures a user's list is NEVER overwritten — new defaults apply only to
+fresh installs. Tests: Core 78/78, Engine 49/49, App parse-checked on the
+branch. The app was NOT updated/released with these prompts yet (explicit
+user instruction — merge + release as v1.0.0 when the user says go).
 
 macOS:
 ```sh
