@@ -59,16 +59,20 @@ public final class ResponseTimeEstimator: @unchecked Sendable {
         persist()
     }
 
-    /// Estimated response time in seconds for a request of the given length,
-    /// or nil when this model has no samples yet (the caller then falls back
-    /// to one full ring revolution per second).
+    /// Estimated response time in seconds for a request of the given length.
+    /// Uses this model's own samples; a model with no samples yet falls back
+    /// to the rate learned across ALL recorded models (per the user's spec),
+    /// so only the very first requests ever — with no data at all — return
+    /// nil (the caller then uses one full ring revolution per second).
     public func estimate(model: String, inputLength: Int) -> Double? {
         lock.lock()
         defer { lock.unlock() }
-        guard var samples = store.models[model], !samples.isEmpty else { return nil }
-        if samples.count > Self.maxSamplesPerModel {
-            samples.removeFirst(samples.count - Self.maxSamplesPerModel)
-        }
+        let own = store.models[model] ?? []
+        let fallback = own.isEmpty
+            ? store.models.values.flatMap { $0 }.suffix(Self.maxSamplesPerModel)
+            : []
+        let samples = own.isEmpty ? Array(fallback) : own
+        guard !samples.isEmpty else { return nil }
         // Median seconds-per-character rate, scaled to this request's length.
         let rates = samples
             .map { $0.seconds / Double(max($0.length, 1)) }

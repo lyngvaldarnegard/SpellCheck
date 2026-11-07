@@ -343,11 +343,21 @@ struct ResponseTimeEstimatorTests {
         #expect(abs(longer! - 2.0) < 0.4)
     }
 
-    @Test func samplesArePerModel() {
+    @Test func ownSamplesBeatGlobalFallback() {
         let estimator = ResponseTimeEstimator(fileURL: nil)
         estimator.record(model: "flash", inputLength: 1000, seconds: 1)
-        #expect(estimator.estimate(model: "large", inputLength: 1000) == nil)
-        #expect(estimator.estimate(model: "flash", inputLength: 1000) != nil)
+        // A model with no samples yet falls back to the rate learned across
+        // ALL models (user spec) instead of returning nothing.
+        #expect(estimator.estimate(model: "large", inputLength: 1000) != nil)
+        #expect(abs(estimator.estimate(model: "large", inputLength: 1000)! - 1.0) < 0.01)
+        // The model's own samples take precedence once they exist.
+        estimator.record(model: "large", inputLength: 1000, seconds: 10)
+        #expect(abs(estimator.estimate(model: "large", inputLength: 1000)! - 10.0) < 0.01)
+    }
+
+    @Test func trulyEmptyStoreYieldsNoEstimate() {
+        let estimator = ResponseTimeEstimator(fileURL: nil)
+        #expect(estimator.estimate(model: "anything", inputLength: 1000) == nil)
     }
 
     @Test func outlierCannotDistortTheEstimate() {
