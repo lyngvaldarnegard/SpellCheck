@@ -64,7 +64,7 @@ final class CircularProgressView: NSView {
         let fill = CABasicAnimation(keyPath: "strokeEnd")
         fill.fromValue = 0
         fill.toValue = 1
-        fill.duration = max(0.5, estimatedSeconds)
+        fill.duration = max(0.01, estimatedSeconds)
         fill.repeatCount = .infinity
         progressLayer.add(fill, forKey: "ringFill")
     }

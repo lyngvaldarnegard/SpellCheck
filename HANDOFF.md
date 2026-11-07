@@ -341,7 +341,8 @@ background anymore — just the ring near the cursor. Estimates come from
 `ResponseTimeEstimator` (Engine): per-model samples of (input length,
 observed seconds) from a new `EngineEvent.requestTiming(model:seconds:
 inputLength:)` emitted after each successful request; estimate = inter-quartile
-mean (IQM) of seconds-per-char rates × current length, clamped to [0.5, 120] s; max 20
+mean (IQM) of seconds-per-char rates × current length (NOT clamped — user
+decision, v1.1.2); max 20
 samples/model; a model with no samples falls back to the rate learned
 across ALL models (user spec), so only a completely empty store uses the
 1 s/revolution default; persisted to Application Support/SpellCheck/response-times.json

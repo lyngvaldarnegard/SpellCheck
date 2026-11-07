@@ -26,9 +26,6 @@ public final class ResponseTimeEstimator: @unchecked Sendable {
 
     /// Most recent samples kept per model.
     private static let maxSamplesPerModel = 20
-    /// Estimates are clamped to a sane range (the request timeout is 120 s).
-    private static let minimumEstimate: Double = 0.5
-    private static let maximumEstimate: Double = 120
 
     /// Learned response-time statistics for one model, shown in Settings.
     /// All times are normalized to seconds per 100 tokens (the standard
@@ -98,8 +95,8 @@ public final class ResponseTimeEstimator: @unchecked Sendable {
         let trim = rates.count / 4
         let kept = trim > 0 ? rates[trim..<(rates.count - trim)] : rates[...]
         let rate = kept.reduce(0, +) / Double(kept.count)
-        let estimate = rate * Double(max(inputLength, 1))
-        return min(max(estimate, Self.minimumEstimate), Self.maximumEstimate)
+        // No clamping (user decision): the raw learned estimate is used.
+        return rate * Double(max(inputLength, 1))
     }
 
     /// Learned statistics for every tracked model, sorted by model name.
@@ -137,8 +134,8 @@ public final class ResponseTimeEstimator: @unchecked Sendable {
         let trim = rates.count / 4
         let kept = trim > 0 ? rates[trim..<(rates.count - trim)] : rates[...]
         let rate = kept.reduce(0, +) / Double(kept.count)
-        let estimate = rate * Double(max(inputLength, 1))
-        return min(max(estimate, Self.minimumEstimate), Self.maximumEstimate)
+        // No clamping (user decision): the raw learned estimate is used.
+        return rate * Double(max(inputLength, 1))
     }
 
     /// Drops all samples for models NOT in `kept` (the provider's current
