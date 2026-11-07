@@ -503,3 +503,47 @@ struct RankedModelBackendTests {
         #expect(allOffline.isReady == false)
     }
 }
+
+struct RankedModelExplorationTests {
+
+    @Test func unexploredModelIsTriedBeforeKnownOnes() async throws {
+        // "new-model" has no samples (nil estimate) -> it serves FIRST, even
+        // though "flash" is proven fast. After it earns a real number, the
+        // live estimator would rank it by data instead.
+        let flash = WhitelistScriptedBackend(key: "flash")
+        let newModel = WhitelistScriptedBackend(key: "new-model")
+        let byModel = ["flash": flash, "new-model": newModel]
+        let backend = RankedModelBackend(
+            models: ["flash", "new-model"],
+            makeBackend: { byModel[$0]! },
+            estimatedSeconds: { $0 == "flash" ? 1.0 : nil }
+        )
+        let result = try await backend.correct(text: "hi", prompt: "p", sharedPrompt: "")
+        #expect(result == "ok from new-model")
+        #expect(flash.callCount == 0)
+        #expect(backend.modelKey == "new-model")
+    }
+
+    @Test func unexploredModelsKeepWhitelistOrderAmongThemselves() async throws {
+        let first = WhitelistScriptedBackend(key: "first-unexplored")
+        let second = WhitelistScriptedBackend(key: "second-unexplored")
+        let byModel = ["first-unexplored": first, "second-unexplored": second]
+        let backend = RankedModelBackend(
+            models: ["second-unexplored", "first-unexplored"],
+            makeBackend: { byModel[$0]! },
+            estimatedSeconds: { _ in nil }
+        )
+        let result = try await backend.correct(text: "hi", prompt: "p", sharedPrompt: "")
+        #expect(result == "ok from second-unexplored")
+    }
+
+    @Test func ownEstimateReturnsNilWithoutOwnSamples() {
+        let estimator = ResponseTimeEstimator(fileURL: nil)
+        estimator.record(model: "flash", inputLength: 1000, seconds: 2)
+        // "large" has no own samples: estimate() falls back to the all-models
+        // average, ownEstimate() does not (that is what makes it explored).
+        #expect(estimator.estimate(model: "large", inputLength: 1000) != nil)
+        #expect(estimator.ownEstimate(model: "large", inputLength: 1000) == nil)
+        #expect(estimator.ownEstimate(model: "flash", inputLength: 1000) != nil)
+    }
+}

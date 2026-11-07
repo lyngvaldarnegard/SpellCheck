@@ -11,8 +11,9 @@ import SpellCheckCore
 /// The ranking is recomputed per request from the estimator, so it always
 /// reflects the newest learned times. Ranking is independent of the request
 /// size (all models scale with the same text), so a fixed reference length is
-/// used. Models with no samples inherit the all-models average via the
-/// estimator's fallback; a completely empty store keeps the whitelist order.
+/// used. Models with no samples of their own are considered UNEXPLORED and
+/// are tried first (in whitelist order), so every whitelisted model earns a
+/// real measured number before the data-driven ranking takes over.
 public final class RankedModelBackend: CorrectionBackend, @unchecked Sendable {
 
     private let models: [String]
@@ -81,17 +82,24 @@ public final class RankedModelBackend: CorrectionBackend, @unchecked Sendable {
         lock.unlock()
     }
 
-    /// Whitelist ordered by learned speed (fastest first). Swift's sort is
-    /// not stable, so the whitelist index breaks ties explicitly.
+    /// Whitelist ordered for serving: models WITHOUT their own measured
+    /// times come FIRST (in whitelist order) so each is tried once and earns
+    /// a real number; after that, data wins. Models with samples follow,
+    /// fastest first. Swift's sort is not stable, so the whitelist index
+    /// breaks ties explicitly.
     private func rankedModels() -> [String] {
-        let ranked = models.enumerated().map { entry -> (index: Int, model: String, seconds: Double) in
-            (entry.offset, entry.element, estimatedSeconds(entry.element) ?? .infinity)
+        let entries = models.enumerated().map { entry -> (index: Int, model: String, seconds: Double?) in
+            (entry.offset, entry.element, estimatedSeconds(entry.element))
         }
-        return ranked
-            .sorted { lhs, rhs in
-                if lhs.seconds != rhs.seconds { return lhs.seconds < rhs.seconds }
-                return lhs.index < rhs.index
-            }
-            .map(\.model)
+        let unexplored = entries.filter { $0.seconds == nil }.sorted { $0.index < $1.index }
+        let explored = entries.compactMap { entry -> (index: Int, model: String, seconds: Double)? in
+            guard let seconds = entry.seconds else { return nil }
+            return (entry.index, entry.model, seconds)
+        }
+        let ranked = explored.sorted { lhs, rhs in
+            if lhs.seconds != rhs.seconds { return lhs.seconds < rhs.seconds }
+            return lhs.index < rhs.index
+        }
+        return (unexplored + ranked).map(\.model)
     }
 }

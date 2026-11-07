@@ -240,7 +240,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     OpenAICompatibleBackend(apiKey: apiKey, model: model, baseURL: baseURL)
                 },
                 estimatedSeconds: { model in
-                    estimator?.estimate(model: model, inputLength: 1000)
+                    // nil = the model has no samples of its own yet ->
+                    // ranked first and tried once, so it earns a real number.
+                    estimator?.ownEstimate(model: model, inputLength: 1000)
                 }
             )
         }

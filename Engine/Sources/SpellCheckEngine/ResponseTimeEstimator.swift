@@ -124,6 +124,23 @@ public final class ResponseTimeEstimator: @unchecked Sendable {
         }
     }
 
+    /// Like `estimate`, but returns nil when this model has no samples of its
+    /// own (no all-models fallback). Used for ranking: models without their
+    /// own measured times are explored first so they earn a real number.
+    public func ownEstimate(model: String, inputLength: Int) -> Double? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let samples = store.models[model], !samples.isEmpty else { return nil }
+        let rates = samples
+            .map { $0.seconds / Double(max($0.length, 1)) }
+            .sorted()
+        let trim = rates.count / 4
+        let kept = trim > 0 ? rates[trim..<(rates.count - trim)] : rates[...]
+        let rate = kept.reduce(0, +) / Double(kept.count)
+        let estimate = rate * Double(max(inputLength, 1))
+        return min(max(estimate, Self.minimumEstimate), Self.maximumEstimate)
+    }
+
     /// Drops all samples for models NOT in `kept` (the provider's current
     /// model list), so outdated models are neither estimated from nor shown.
     public func purgeModels(notIn kept: [String]) {
