@@ -387,3 +387,119 @@ struct PromptCacheKeyRequestTests {
         _ = key // stability asserted above; here we assert the fallback keeps a ready backend
     }
 }
+
+// MARK: Ranked model whitelist
+
+private final class WhitelistScriptedBackend: CorrectionBackend, @unchecked Sendable {
+    let displayName = "Scripted"
+    let isReady: Bool
+    let key: String
+    var error: (any Error)?
+    private(set) var callCount = 0
+
+    init(key: String, ready: Bool = true, error: (any Error)? = nil) {
+        self.key = key
+        self.isReady = ready
+        self.error = error
+    }
+
+    func correct(text: String, prompt: String, sharedPrompt: String) async throws -> String {
+        callCount += 1
+        if let error { throw error }
+        return "ok from \(key)"
+    }
+}
+
+struct RankedModelBackendTests {
+
+    private func makeBackend(rank: [String: Double], errors: [String: any Error]) -> (RankedModelBackend, [WhitelistScriptedBackend]) {
+        let scripted = rank.keys.sorted().map { WhitelistScriptedBackend(key: $0, error: errors[$0]) }
+        let byModel = Dictionary(uniqueKeysWithValues: scripted.map { ($0.key, $0) })
+        let backend = RankedModelBackend(
+            models: Array(rank.keys.sorted()),
+            makeBackend: { byModel[$0]! },
+            estimatedSeconds: { rank[$0] }
+        )
+        return (backend, scripted)
+    }
+
+    @Test func fastestModelServesTheRequest() async throws {
+        // "flash" learned 1 s, "large" learned 5 s -> flash serves.
+        let (backend, scripted) = makeBackend(rank: ["flash": 1, "large": 5], errors: [:])
+        let result = try await backend.correct(text: "hi", prompt: "p", sharedPrompt: "")
+        #expect(result == "ok from flash")
+        #expect(scripted.first { $0.key == "flash" }!.callCount == 1)
+        #expect(scripted.first { $0.key == "large" }!.callCount == 0)
+        #expect(backend.modelKey == "flash")
+    }
+
+    @Test func retryableFailureFallsThroughToNextFastest() async throws {
+        // flash is fastest but out of capacity -> large serves.
+        let (backend, scripted) = makeBackend(
+            rank: ["flash": 1, "large": 5],
+            errors: ["flash": CorrectionError.http(status: 429, message: "capacity")]
+        )
+        let result = try await backend.correct(text: "hi", prompt: "p", sharedPrompt: "")
+        #expect(result == "ok from large")
+        #expect(backend.modelKey == "large")
+    }
+
+    @Test func nonRetryableFailureDoesNotFallThrough() async {
+        // A 401 (auth) is a configuration problem on every model: fail fast.
+        let (backend, scripted) = makeBackend(
+            rank: ["flash": 1, "large": 5],
+            errors: ["flash": CorrectionError.http(status: 401, message: "unauthorized")]
+        )
+        await #expect(throws: CorrectionError.self) {
+            _ = try await backend.correct(text: "hi", prompt: "p", sharedPrompt: "")
+        }
+        #expect(scripted.first { $0.key == "large" }!.callCount == 0)
+    }
+
+    @Test func allFailingProducesOneClearError() async {
+        let (backend, _) = makeBackend(
+            rank: ["flash": 1, "large": 5],
+            errors: [
+                "flash": CorrectionError.http(status: 500, message: "boom"),
+                "large": CorrectionError.http(status: 503, message: "unavailable"),
+            ]
+        )
+        await #expect(throws: CorrectionError.self) {
+            _ = try await backend.correct(text: "hi", prompt: "p", sharedPrompt: "")
+        }
+    }
+
+    @Test func unknownModelsKeepWhitelistOrderWhenNoData() async throws {
+        // No learned data at all: nil estimates -> whitelist order wins.
+        let scripted = [
+            WhitelistScriptedBackend(key: "zeta"),
+            WhitelistScriptedBackend(key: "alpha"),
+        ]
+        let byModel = Dictionary(uniqueKeysWithValues: scripted.map { ($0.key, $0) })
+        let backend = RankedModelBackend(
+            models: ["zeta", "alpha"],
+            makeBackend: { byModel[$0]! },
+            estimatedSeconds: { _ in nil }
+        )
+        let result = try await backend.correct(text: "hi", prompt: "p", sharedPrompt: "")
+        #expect(result == "ok from zeta")
+    }
+
+    @Test func isReadyRequiresAtLeastOneReadyModel() {
+        let slow = WhitelistScriptedBackend(key: "slow", ready: true)
+        let offline = WhitelistScriptedBackend(key: "offline", ready: false)
+        let byModel = ["slow": slow, "offline": offline]
+        let backend = RankedModelBackend(
+            models: ["slow", "offline"],
+            makeBackend: { byModel[$0]! },
+            estimatedSeconds: { _ in nil }
+        )
+        #expect(backend.isReady)
+        let allOffline = RankedModelBackend(
+            models: ["offline"],
+            makeBackend: { byModel[$0]! },
+            estimatedSeconds: { _ in nil }
+        )
+        #expect(allOffline.isReady == false)
+    }
+}

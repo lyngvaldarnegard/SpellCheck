@@ -124,6 +124,19 @@ public final class ResponseTimeEstimator: @unchecked Sendable {
         }
     }
 
+    /// Drops all samples for models NOT in `kept` (the provider's current
+    /// model list), so outdated models are neither estimated from nor shown.
+    public func purgeModels(notIn kept: [String]) {
+        lock.lock()
+        defer { lock.unlock() }
+        let keep = Set(kept)
+        let before = store.models.count
+        store.models = store.models.filter { keep.contains($0.key) }
+        if store.models.count != before {
+            persist()
+        }
+    }
+
     // MARK: Rate helpers (seconds per 1000 characters, sorted input required)
 
     private static func median(of sorted: [Double]) -> Double {

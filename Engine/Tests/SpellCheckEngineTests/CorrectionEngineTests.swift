@@ -443,3 +443,30 @@ struct ResponseTimeEstimatorTests {
         #expect(inputLength == "some selected text".utf16.count)
     }
 }
+
+struct ResponseTimePurgeTests {
+
+    @Test func purgeDropsSamplesForRetiredModels() {
+        let file = FileManager.default.temporaryDirectory
+            .appendingPathComponent("spellcheck-purge-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: file) }
+        let estimator = ResponseTimeEstimator(fileURL: file)
+        estimator.record(model: "mistral-small-latest", inputLength: 1000, seconds: 2)
+        estimator.record(model: "old-retired-model", inputLength: 1000, seconds: 5)
+        // The provider now serves only these:
+        estimator.purgeModels(notIn: ["mistral-small-latest", "mistral-medium-latest"])
+        #expect(estimator.estimate(model: "mistral-small-latest", inputLength: 1000) != nil)
+        // The retired model's OWN samples are gone (it no longer appears in
+        // the tracked models); an estimate for it now comes only from the
+        // all-models fallback — and it would never be called anyway, because
+        // the UI removes retired models from the whitelist at the same time.
+        #expect(estimator.statistics().map(\.model) == ["mistral-small-latest"])
+        // Purging everything leaves no data at all.
+        estimator.purgeModels(notIn: [])
+        #expect(estimator.statistics().isEmpty)
+        #expect(estimator.estimate(model: "mistral-small-latest", inputLength: 1000) == nil)
+        // The purge persisted: a fresh instance sees the same state.
+        let reopened = ResponseTimeEstimator(fileURL: file)
+        #expect(reopened.statistics().isEmpty)
+    }
+}

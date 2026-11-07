@@ -50,6 +50,13 @@ struct SettingsView: View {
                 Text("If a request to the primary model fails temporarily (capacity, rate limit, server error) or returns an unusable response, the same request is retried once with the backup model. Leave empty to disable.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+                ModelWhitelistField(
+                    selection: $settings.whitelistedModels,
+                    apiKey: settings.apiKey,
+                    baseURL: settings.baseURL,
+                    onFetched: { models in controller.purgeUnknownModels?(models) }
+                )
+                .id("whitelist-\(settings.baseURL)")
                 Text("All text editing runs through this API. Get a key at your provider's dashboard (e.g. console.mistral.ai).")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
@@ -285,6 +292,91 @@ private struct ModelPickerField: View {
     }
 }
 
+/// Multi-select model whitelist: the user approves which models are
+/// acceptable (quality/cost); the app then automatically serves each request
+/// from the fastest whitelisted model (learned response times) and falls
+/// through the ranked list on retryable failures. Fetches the provider's
+/// model list like the single-model pickers; manual whitelist entries are
+/// kept even when they are not in the fetched list.
+private struct ModelWhitelistField: View {
+    @Binding var selection: [String]
+    let apiKey: String
+    let baseURL: String
+    var onFetched: ([String]) -> Void = { _ in }
+
+    @State private var availableModels: [String] = []
+    @State private var isFetching = false
+    @State private var fetchError: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Model whitelist (optional)")
+                    .foregroundStyle(selection.isEmpty ? .secondary : .primary)
+                Spacer()
+                Button(isFetching ? "Fetching\u{2026}" : "Fetch models") {
+                    fetchModels()
+                }
+                .disabled(isFetching)
+            }
+            // Entries whitelisted by hand that the fetched list does not
+            // contain are still shown and kept.
+            let listed = availableModels + selection.filter { !availableModels.contains($0) }
+            if !listed.isEmpty {
+                ForEach(listed, id: \.self) { model in
+                    Toggle(model, isOn: Binding(
+                        get: { selection.contains(model) },
+                        set: { on in
+                            if on, !selection.contains(model) { selection.append(model) }
+                            else if !on { selection.removeAll { $0 == model } }
+                        }
+                    ))
+                    .controlSize(.small)
+                }
+            }
+            if let fetchError {
+                Text(fetchError)
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+            } else if selection.isEmpty {
+                Text("Leave empty to always use the Model field above. When enabled, each request uses the fastest whitelisted model based on learned response times; failures fall through to the next fastest.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("\(selection.count) models whitelisted \u{2014} ranked automatically by speed; you control quality and cost.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func fetchModels() {
+        isFetching = true
+        fetchError = nil
+        let apiKey = apiKey
+        let baseURL = baseURL
+        Task {
+            do {
+                let models = try await ModelCatalog.fetchModels(apiKey: apiKey, baseURL: baseURL)
+                await MainActor.run {
+                    availableModels = models
+                    // Purge whitelisted models the provider no longer serves
+                    // (the user's rule: never call or keep data for outdated
+                    // models), and drop their learned samples too.
+                    selection = selection.filter { models.contains($0) }
+                    onFetched(models)
+                    isFetching = false
+                }
+            } catch {
+                await MainActor.run {
+                    fetchError = CorrectionEngine.message(for: error)
+                    isFetching = false
+                }
+            }
+        }
+    }
+}
+
 /// Records a global hot key by listening for the next key-down with modifiers.
 struct HotKeyRecorderView: View {
     @Binding var hotKey: HotKey
@@ -368,6 +460,10 @@ final class SettingsWindowController: NSWindowController {
     /// Supplies the learned per-model response-time statistics for the
     /// Settings section (set by AppDelegate once setup completes).
     var responseTimeStats: (() -> [ResponseTimeEstimator.ModelStatistics])?
+    /// Called with the provider's freshly fetched model list so samples for
+    /// models the provider no longer serves can be purged (set by
+    /// AppDelegate).
+    var purgeUnknownModels: (([String]) -> Void)?
 
     init(settings: AppSettings) {
         self.initialSettings = settings

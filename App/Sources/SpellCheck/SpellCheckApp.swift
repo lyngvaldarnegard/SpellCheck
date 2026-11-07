@@ -120,6 +120,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsController.responseTimeStats = { [weak self] in
             self?.responseTimeEstimator?.statistics() ?? []
         }
+        settingsController.purgeUnknownModels = { [weak self] models in
+            self?.responseTimeEstimator?.purgeModels(notIn: models)
+        }
         settingsController.configureSave { [weak self] newSettings in
             guard let self else { return }
             // The Settings window never edits prompts — always keep the
@@ -186,6 +189,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if old.apiKey != newSettings.apiKey
             || old.model != newSettings.model
             || old.backupModel != newSettings.backupModel
+            || old.whitelistedModels != newSettings.whitelistedModels
             || old.baseURL != newSettings.baseURL
             || old.sharedPrompt != newSettings.sharedPrompt {
             engine = CorrectionEngine(
@@ -218,6 +222,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func makeBackend(from settings: AppSettings) -> any CorrectionBackend {
         let apiKey = settings.apiKey
         let baseURL = settings.baseURL
+        // A model whitelist takes precedence: the user approves which models
+        // are acceptable (quality/cost), and the app automatically serves
+        // each request from the fastest one, falling through the ranked list
+        // on retryable failures.
+        let trimmedWhitelist = settings.whitelistedModels
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        if !trimmedWhitelist.isEmpty {
+            // Capture the thread-safe estimator directly (it is an
+            // @unchecked Sendable class with an internal lock), never the
+            // main-actor-isolated self.
+            let estimator = responseTimeEstimator
+            return RankedModelBackend(
+                models: trimmedWhitelist,
+                makeBackend: { model in
+                    OpenAICompatibleBackend(apiKey: apiKey, model: model, baseURL: baseURL)
+                },
+                estimatedSeconds: { model in
+                    estimator?.estimate(model: model, inputLength: 1000)
+                }
+            )
+        }
         return FallbackBackend(
             primary: OpenAICompatibleBackend(apiKey: apiKey, model: settings.model, baseURL: baseURL),
             backupModel: settings.backupModel

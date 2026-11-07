@@ -79,6 +79,11 @@ public struct Settings: Codable, Equatable, Sendable {
     /// Optional backup model (same provider/credentials) retried once when a
     /// request to the primary model fails for a temporary or compatibility reason.
     public var backupModel: String
+    /// Optional whitelist of acceptable models (same provider/credentials).
+    /// When non-empty, each request is served by the whitelisted model with
+    /// the fastest learned response time; failures fall through to the next
+    /// fastest. The user chooses quality/cost here; the app chooses speed.
+    public var whitelistedModels: [String]
     public var baseURL: String
     /// Common instruction included in every request, before the selected
     /// prompt's instruction. Editable in Settings; persisted like the rest.
@@ -102,6 +107,7 @@ public struct Settings: Codable, Equatable, Sendable {
         apiKey: String = "",
         model: String = APIProvider.openAI.defaultModel,
         backupModel: String = "",
+        whitelistedModels: [String] = [],
         baseURL: String = APIProvider.openAI.baseURL,
         sharedPrompt: String = Settings.defaultSharedPrompt,
         prompts: [Prompt] = [],
@@ -114,6 +120,7 @@ public struct Settings: Codable, Equatable, Sendable {
         self.apiKey = apiKey
         self.model = model
         self.backupModel = backupModel
+        self.whitelistedModels = whitelistedModels
         self.baseURL = baseURL
         self.sharedPrompt = sharedPrompt
         self.prompts = prompts
@@ -129,6 +136,7 @@ public struct Settings: Codable, Equatable, Sendable {
         apiKey = try c.decodeIfPresent(String.self, forKey: .apiKey) ?? ""
         model = try c.decodeIfPresent(String.self, forKey: .model) ?? APIProvider.openAI.defaultModel
         backupModel = try c.decodeIfPresent(String.self, forKey: .backupModel) ?? ""
+        whitelistedModels = try c.decodeIfPresent([String].self, forKey: .whitelistedModels) ?? []
         baseURL = try c.decodeIfPresent(String.self, forKey: .baseURL) ?? APIProvider.openAI.baseURL
         // Settings files from versions before the shared prompt existed get
         // the editable default once; later user edits always win.
@@ -152,7 +160,7 @@ public struct Settings: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case hotKey, apiKey, model, backupModel, baseURL, sharedPrompt, prompts
+        case hotKey, apiKey, model, backupModel, whitelistedModels, baseURL, sharedPrompt, prompts
         case launchAtLogin, menuBarIconStyle, didSeedDefaultPrompts, importedDefaultPromptsVersion
     }
 
