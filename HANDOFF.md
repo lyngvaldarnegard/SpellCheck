@@ -20,7 +20,8 @@ until the user confirms the fixes on his Mac.
 
 ## 1. What this project is
 
-**SpellCheck** is a clone of the macOS menu-bar app **FixKey** (fixkey.ai): a
+**SpellCheck** is a macOS menu-bar app for AI text editing (workflow
+inspired by similar menu-bar text tools): a
 global hot key (default **⌥L**) opens a prompt picker over the current
 selection — or the sentence around the caret — in ANY app via the
 Accessibility API. The chosen prompt is sent to any OpenAI-compatible chat

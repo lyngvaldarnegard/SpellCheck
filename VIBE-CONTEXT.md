@@ -2,7 +2,7 @@
 
 # SpellCheck app — Vibe context
 
-Sigurd's macOS menu-bar app that corrects text in any app: select text (or place the caret in a sentence), press the global hot key, review the correction, and it is typed back over the original. A FixKey clone, built in Swift. Repo: **lyngvaldarnegard/SpellCheck** (private, branch `main`). Old scaffold branch `vibe/spellcheck-scaffold-6a9537` is stale — main is the source of truth.
+Sigurd's macOS menu-bar app that corrects text in any app: select text (or place the caret in a sentence), press the global hot key, review the correction, and it is typed back over the original. A standalone AI text-editing app, built in Swift. Repo: **lyngvaldarnegard/SpellCheck** (private, branch `main`). Old scaffold branch `vibe/spellcheck-scaffold-6a9537` is stale — main is the source of truth.
 
 The app was built by a different chat (Vibe Nuage Agent). The Vibe chat's job: hold the standing context and build the next-phase prompt with the prompt-bygger skill.
 

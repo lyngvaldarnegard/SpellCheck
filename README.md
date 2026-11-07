@@ -1,6 +1,6 @@
 # SpellCheck
 
-A FixKey-style macOS menu-bar app that edits the text you are working on —
+A macOS menu-bar app that edits the text you are working on —
 anywhere, through an AI API. Select some text (or just place the caret inside
 a sentence), press **⌥L**, pick a prompt from the popup, and the AI's result
 directly replaces your original text in the app you were using. No review
@@ -19,7 +19,7 @@ window, no confirmation step.
   shortcut already taken by another app — are shown as an alert, never
   silently ignored. Carbon `RegisterEventHotKey` needs **no** Input
   Monitoring permission; only Accessibility is required.
-- **FixKey-style prompt picker** — a compact dark popup with a search field
+- **Prompt picker** — a compact dark popup with a search field
   (focused, filters as you type), a scrollable list of prompts with icons,
   keyboard ↑/↓ selection, Enter to run, click to run, Escape to close,
   clicking outside dismisses it without editing anything, and an
@@ -35,8 +35,8 @@ window, no confirmation step.
 - **Fully editable prompts** — every prompt is an ordinary editable entry.
   The built-in defaults (Fix Grammar, Improve Writing, Make Shorter,
   Summarize, Explain this, Convert to Bullet Points, Translate to English —
-  seeded from the FixKey archive) can be edited and deleted like your own.
-- **Prompt Editor** — a separate FixKey-style window: searchable prompt list
+  shipped as editable defaults) can be edited and deleted like your own.
+- **Prompt Editor** — a separate two-pane window: searchable prompt list
   on the left, title + full prompt text + icon on the right, with Add, Save
   and Delete. ⌘S saves there too.
 - **AI-only** — all editing runs through an OpenAI-compatible API (Mistral,
