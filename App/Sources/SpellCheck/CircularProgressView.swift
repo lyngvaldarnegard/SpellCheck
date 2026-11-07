@@ -22,8 +22,6 @@ final class CircularProgressView: NSView {
             layer.lineCap = .round
             layer.frame = bounds
             layer.bounds = bounds
-            // Start at 12 o'clock and run clockwise.
-            layer.transform = CATransform3DMakeRotation(-CGFloat.pi / 2, 0, 0, 1)
         }
         trackLayer.strokeColor = NSColor(white: 1, alpha: 0.22).cgColor
         trackLayer.strokeEnd = 1
@@ -39,7 +37,18 @@ final class CircularProgressView: NSView {
         super.layout()
         let inset = Self.lineWidth / 2 + 1
         let circleRect = bounds.insetBy(dx: inset, dy: inset)
-        let path = CGPath(ellipseIn: circleRect, transform: nil)
+        // The arc starts at 12 o'clock and runs CLOCKWISE on screen. AppKit
+        // layer coordinates have y pointing UP, so a visually clockwise sweep
+        // is a DECREASING angle: 90° (top) → 0° (right) → -90° (bottom)
+        // → -180° (left) → -270° (back to the top). A rotated plain ellipse
+        // starts at the bottom instead — that was the v1.0.0 bug.
+        let center = CGPoint(x: circleRect.midX, y: circleRect.midY)
+        let radius = min(circleRect.width, circleRect.height) / 2
+        let path = CGMutablePath()
+        path.addArc(center: center, radius: radius,
+                    startAngle: CGFloat.pi / 2,
+                    endAngle: -CGFloat.pi * 3 / 2,
+                    clockwise: true)
         trackLayer.path = path
         progressLayer.path = path
         for layer in [trackLayer, progressLayer] {
