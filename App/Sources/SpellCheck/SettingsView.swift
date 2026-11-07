@@ -8,6 +8,7 @@ struct SettingsView: View {
     @State private var settings: AppSettings
     @State private var saveState: SaveState = .idle
     @State private var saveError: String?
+    @State private var autosaveTask: Task<Void, Never>?
     private let controller: SettingsWindowController
 
     private enum SaveState: Equatable {
@@ -117,6 +118,17 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .frame(minWidth: 560, minHeight: 480)
+        // Autosave: every change persists (debounced, so typing does not
+        // write to disk per keystroke). ⌘S and the Save button still save
+        // immediately.
+        .onChange(of: settings) {
+            autosaveTask?.cancel()
+            autosaveTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                guard !Task.isCancelled else { return }
+                await saveSettings()
+            }
+        }
         .alert("Could not save settings", isPresented: .init(
             get: { saveError != nil },
             set: { if !$0 { saveError = nil } }

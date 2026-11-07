@@ -163,17 +163,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applySettings(_ newSettings: AppSettings) {
+        let old = settings
         settings = newSettings
-        registerHotKey()
+        // Autosave fires often; only redo the expensive/global things when
+        // the relevant settings actually changed. Recreating the engine on
+        // every keystroke would also drop the busy flag of a running
+        // correction, so backend-affecting changes are compared explicitly.
+        if old.hotKey != newSettings.hotKey {
+            registerHotKey()
+        }
         statusBarController?.apply(newSettings)
-        engine = CorrectionEngine(
-            backend: makeBackend(from: newSettings),
-            source: textSource,
-            sharedPrompt: newSettings.sharedPrompt,
-            onEvent: { [weak self] event in
-                Task { @MainActor in self?.handle(event) }
-            }
-        )
+        if old.apiKey != newSettings.apiKey
+            || old.model != newSettings.model
+            || old.backupModel != newSettings.backupModel
+            || old.baseURL != newSettings.baseURL
+            || old.sharedPrompt != newSettings.sharedPrompt {
+            engine = CorrectionEngine(
+                backend: makeBackend(from: newSettings),
+                source: textSource,
+                sharedPrompt: newSettings.sharedPrompt,
+                onEvent: { [weak self] event in
+                    Task { @MainActor in self?.handle(event) }
+                }
+            )
+        }
         promptEditorController?.reload(prompts: newSettings.prompts)
         settingsController?.reload(settings: newSettings)
     }
