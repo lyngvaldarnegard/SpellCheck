@@ -281,7 +281,7 @@ notes, appcast and notes files follow the tag as usual.
 
 **v1.0.0 planned content — updated default prompts (user instruction,
 06.11.2026)**: the user's new default prompt list is PREPARED on the draft
-branch **`vibe/v1-default-prompts`** (head 572639c) — do NOT ship v1.0.0
+branch **`vibe/v1-default-prompts`** (head acbf154) — do NOT ship v1.0.0
 without merging it. The draft: 19 prompts from the user's saved list;
 Allvit, Napoloen-as-named and Juss dropped (Juss is Norway-specific);
 Napoloen's text lives on as **Humanize** (Norwegian sections removed);
@@ -306,7 +306,23 @@ drag-to-reorder, any setting). ⌘S and the Save button still save
 immediately, and the Saved indicator still confirms. `applySettings` now
 only re-registers the hotkey / recreates the engine when the relevant
 settings actually changed (autosave fires often; recreating the engine per
-keystroke would drop a running correction's busy flag). The app was NOT
+keystroke would drop a running correction's busy flag). **Circular
+progress ring (user request, same draft)**: the v0.2.8 NSProgressIndicator
+spinner is replaced by `CircularProgressView` — a ring (faint track +
+bright arc) that fills from the top clockwise over the ESTIMATED response
+time; when exceeded it wraps and refills repeatedly until the correction
+completes; without an estimate one revolution takes 1 s. No dark square
+background anymore — just the ring near the cursor. Estimates come from
+`ResponseTimeEstimator` (Engine): per-model samples of (input length,
+observed seconds) from a new `EngineEvent.requestTiming(model:seconds:
+inputLength:)` emitted after each successful request; estimate = median
+seconds-per-char rate × current length, clamped to [0.5, 120] s; max 20
+samples/model; persisted to Application Support/SpellCheck/response-times.json
+(numbers only — no text/prompts/keys). `CorrectionBackend.modelKey`
+added (default = displayName; OpenAICompatibleBackend = model;
+FallbackBackend = primary's). Tests: Engine 55/55 (estimator math,
+outlier-median, persistence, per-model, timing event), Core 79/79, App parse
++ ring show/hide tests. The app was NOT
 updated/released with any of this yet (explicit user instruction —
 merge + release as v1.0.0 when the user says go).
 
