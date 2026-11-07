@@ -319,3 +319,76 @@ extension EngineEvent {
         }
     }
 }
+
+// MARK: Response-time estimation
+
+struct ResponseTimeEstimatorTests {
+
+    @Test func noSamplesYieldsNoEstimate() {
+        let estimator = ResponseTimeEstimator(fileURL: nil)
+        #expect(estimator.estimate(model: "mistral-small-latest", inputLength: 100) == nil)
+    }
+
+    @Test func estimateScalesWithInputLength() {
+        let estimator = ResponseTimeEstimator(fileURL: nil)
+        // Two samples for the same model: 1000 chars took 2 s, 3000 chars 6 s
+        // → ~0.002 s/char → 500 chars ≈ 1 s.
+        estimator.record(model: "m", inputLength: 1000, seconds: 2)
+        estimator.record(model: "m", inputLength: 3000, seconds: 6)
+        let estimate = estimator.estimate(model: "m", inputLength: 500)
+        #expect(estimate != nil)
+        #expect(abs(estimate! - 1.0) < 0.2)
+        // Double the text → roughly double the time.
+        let longer = estimator.estimate(model: "m", inputLength: 1000)
+        #expect(abs(longer! - 2.0) < 0.4)
+    }
+
+    @Test func samplesArePerModel() {
+        let estimator = ResponseTimeEstimator(fileURL: nil)
+        estimator.record(model: "flash", inputLength: 1000, seconds: 1)
+        #expect(estimator.estimate(model: "large", inputLength: 1000) == nil)
+        #expect(estimator.estimate(model: "flash", inputLength: 1000) != nil)
+    }
+
+    @Test func outlierCannotDistortTheEstimate() {
+        let estimator = ResponseTimeEstimator(fileURL: nil)
+        for _ in 0..<5 { estimator.record(model: "m", inputLength: 100, seconds: 1) }
+        estimator.record(model: "m", inputLength: 100, seconds: 60) // one outlier
+        // Median rate stays ~1s per 100 chars.
+        let estimate = estimator.estimate(model: "m", inputLength: 100)
+        #expect(abs(estimate! - 1.0) < 0.3)
+    }
+
+    @Test func samplesPersistAcrossInstances() throws {
+        let file = FileManager.default.temporaryDirectory
+            .appendingPathComponent("spellcheck-timing-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: file) }
+        let first = ResponseTimeEstimator(fileURL: file)
+        first.record(model: "m", inputLength: 1000, seconds: 2)
+        let reopened = ResponseTimeEstimator(fileURL: file)
+        let estimate = reopened.estimate(model: "m", inputLength: 1000)
+        #expect(abs(estimate! - 2.0) < 0.01)
+    }
+
+    @Test func engineEmitsRequestTimingOnSuccess() async {
+        let recorder = EventRecorder()
+        let backend = FakeBackend()
+        backend.response = "Corrected text"
+        let source = FakeSource()
+        source.scope = .selection("some selected text")
+        let engine = CorrectionEngine(backend: backend, source: source, onEvent: {
+            recorder.record($0)
+        })
+
+        await engine.run(prompt: Prompt(name: "P", prompt: "p"))
+
+        guard case .requestTiming(let model, let seconds, let inputLength) =
+              recorder.events.first(where: { if case .requestTiming = $0 { return true }; return false }) ?? .idle else {
+            Issue.record("expected a requestTiming event")
+            return
+        }
+        #expect(model == backend.modelKey)
+        #expect(seconds >= 0)
+        #expect(inputLength == "some selected text".utf16.count)
+    }
+}

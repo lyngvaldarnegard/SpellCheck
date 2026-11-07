@@ -65,14 +65,26 @@ struct StatusBarEventTests {
 @MainActor
 struct WorkingIndicatorTests {
 
-    /// The FixKey-style spinner: visible while working, hidden when done,
+    /// The circular progress ring: visible while working, hidden when done,
     /// never key, never intercepting mouse clicks.
-    @Test func spinnerShowsAndHidesWithoutTakingFocus() {
+    @Test func ringShowsAndHidesWithoutTakingFocus() {
         let indicator = WorkingIndicatorController()
         #expect(indicator.isShowing == false)
-        indicator.show()
+        indicator.show(estimatedSeconds: nil)
         #expect(indicator.isShowing == true)
         indicator.hide()
         #expect(indicator.isShowing == false)
+    }
+
+    @Test func ringRestartsOnlyWhenNotAlreadyShowing() {
+        let indicator = WorkingIndicatorController()
+        indicator.show(estimatedSeconds: 5)
+        // A second `.working` event of the same run must not restart the
+        // animation mid-revolution (only reposition).
+        indicator.show(estimatedSeconds: 5)
+        #expect(indicator.isShowing == true)
+        indicator.hide()
+        indicator.show(estimatedSeconds: 2)
+        #expect(indicator.isShowing == true)
     }
 }

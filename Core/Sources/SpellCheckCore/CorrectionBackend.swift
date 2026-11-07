@@ -6,6 +6,10 @@ public protocol CorrectionBackend: Sendable {
     var displayName: String { get }
     /// Whether the backend is ready to serve requests (credentials present, etc.).
     var isReady: Bool { get }
+    /// Stable key identifying the model(s) this backend talks to, used for
+    /// per-model response-time estimation. Backends without a meaningful
+    /// model identity fall back to `displayName`.
+    var modelKey: String { get }
 
     /// Edits `text` according to the user prompt's instruction text and the
     /// shared prompt (a common instruction included in every request).
@@ -13,7 +17,10 @@ public protocol CorrectionBackend: Sendable {
 }
 
 extension CorrectionBackend {
-    /// Backends that have not been updated to the shared-prompt signature yet.
+    /// Default model identity for backends that do not define one.
+    public var modelKey: String { displayName }
+
+    /// Backends that have not been updated to the shared-prompt signature yet
     public func correct(text: String, prompt: String) async throws -> String {
         try await correct(text: text, prompt: prompt, sharedPrompt: "")
     }
