@@ -6,6 +6,18 @@ Sigurd's macOS menu-bar app that corrects text in any app: select text (or place
 
 The app was built by a different chat (Vibe Nuage Agent). The Vibe chat's job: hold the standing context and build the next-phase prompt with the prompt-bygger skill.
 
+## Status (07.11.2026 — v1.0.0 shipped)
+
+- **v1.0.0 is live** (tag v1.0.0; CI + Release green). Everything from the
+  draft branch shipped: 19-prompt defaults, missing-title import, autosave,
+  progress ring with learned estimates (IQM), Response Times section.
+  Brand/clone wording removed from README/HANDOFF/VIBE-CONTEXT; the GitHub
+  repo description still reads "FixKey clone" and must be changed by Sigurd
+  manually (agent token got 403 on repo edit).
+- **v1.1 planned (Sigurd's instruction, not started)**: go over the default
+  prompts — several overlap heavily with his old FixKey prompts; rewrite or
+  replace them. Only after the user says go.
+
 ## Status (06.11.2026 — v0.2.10 session)
 
 - **Next release must be v1.0.0** (Sigurd's instruction): the version after

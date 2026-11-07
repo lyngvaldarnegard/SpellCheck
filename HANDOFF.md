@@ -276,9 +276,19 @@ original app, verifies the write) → status event (+ alert on failure).
 
 ## 4. Build / test / release
 
-**NEXT VERSION: v1.0.0** (direct user instruction, 06.11.2026): the next
-release after v0.2.10 must be tagged `v1.0.0` — not v0.2.11. All release
-notes, appcast and notes files follow the tag as usual.
+**v1.0.0 IS SHIPPED** (07.11.2026, tag v1.0.0, CI + Release green,
+shipped zip verified + smoke-launched). Contains: the 19-prompt default
+list, missing-title import migration, autosave, circular progress ring
+with learned IQM-based response-time estimates, Response Times section in
+Settings. Brand/clone phrasing removed from README/docs; the GitHub repo
+description still says "FixKey clone" — the agent token CANNOT change it
+(403); **the user must edit the repo description himself** (suggested:
+"A macOS menu-bar app that edits the selected text in any application
+using AI").
+
+**NEXT VERSION: v1.1 — planned content (user instruction, 07.11.2026)**:
+review the default prompts, because several overlap heavily with the
+prompts the user had in FixKey. Do NOT start this before the user says so.
 
 **v1.0.0 planned content — updated default prompts (user instruction,
 06.11.2026)**: the user's new default prompt list is PREPARED on the draft
