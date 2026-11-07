@@ -142,7 +142,7 @@ private struct PromptEditorView: View {
         // Autosave: every change persists — title, text, icon, add, delete
         // and drag-to-reorder (debounced, so typing does not write to disk
         // per keystroke). ⌘S and the Save button still save immediately.
-        .onChange(of: prompts) {
+        .onChange(of: prompts) { _ in
             autosaveTask?.cancel()
             autosaveTask = Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 500_000_000)

@@ -39,8 +39,9 @@ public actor CorrectionEngine {
     public var isBusy: Bool { busy }
 
     /// The model identity the backend talks to (for response-time
-    /// estimation in the UI).
-    public var modelKey: String { backend.modelKey }
+    /// estimation in the UI). Nonisolated: reading the backend reference is
+    /// safe and must not hop to the actor from the main thread.
+    public nonisolated var modelKey: String { backend.modelKey }
 
     public init(
         backend: any CorrectionBackend,
