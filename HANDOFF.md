@@ -276,6 +276,20 @@ original app, verifies the write) → status event (+ alert on failure).
 
 ## 4. Build / test / release
 
+**v1.1.0 + v1.1.1 ARE SHIPPED** (07.11.2026, CI + Release green):
+model WHITELIST (Settings → API, multi-select with Fetch models) — the user
+approves models (quality/cost), `RankedModelBackend` serves each request from
+the fastest by learned times with fall-through on retryable errors (auth
+errors fail fast); unmeasured whitelisted models are tried FIRST once so
+every model earns a real sample (v1.1.1); fetching the model list purges
+retired models from BOTH the whitelist and the timing store
+(`purgeModels(notIn:)`); `Settings.whitelistedModels` persists;
+`ResponseTimeEstimator.ownEstimate` (no all-models fallback) drives the
+ranking. Tests: Engine 68/68, Core 79/79. Fresh-install default provider
+stays OpenAI gpt-4o-mini (user considered Mistral defaults, then said
+skip). NOTE: the prompt-list review remains planned for a later release
+(see below).
+
 **v1.0.0 IS SHIPPED** (07.11.2026, tag v1.0.0, CI + Release green,
 shipped zip verified + smoke-launched). Contains: the 19-prompt default
 list, missing-title import migration, autosave, circular progress ring
