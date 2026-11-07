@@ -117,6 +117,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
 
         settingsController = SettingsWindowController(settings: settings)
+        settingsController.responseTimeStats = { [weak self] in
+            self?.responseTimeEstimator?.statistics() ?? []
+        }
         settingsController.configureSave { [weak self] newSettings in
             guard let self else { return }
             // The Settings window never edits prompts — always keep the

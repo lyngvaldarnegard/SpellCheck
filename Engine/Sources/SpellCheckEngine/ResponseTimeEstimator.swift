@@ -30,6 +30,18 @@ public final class ResponseTimeEstimator: @unchecked Sendable {
     private static let minimumEstimate: Double = 0.5
     private static let maximumEstimate: Double = 120
 
+    /// Learned response-time statistics for one model, shown in Settings.
+    /// All times are normalized to seconds per 1000 characters so samples of
+    /// different text lengths are comparable.
+    public struct ModelStatistics: Equatable, Sendable {
+        public let model: String
+        public let sampleCount: Int
+        public let medianSeconds: Double
+        public let interQuartileMeanSeconds: Double
+        public let firstQuartileSeconds: Double
+        public let thirdQuartileSeconds: Double
+    }
+
     private let lock = NSLock()
     private var store: Store
     private let fileURL: URL?
@@ -87,6 +99,52 @@ public final class ResponseTimeEstimator: @unchecked Sendable {
         let rate = kept.reduce(0, +) / Double(kept.count)
         let estimate = rate * Double(max(inputLength, 1))
         return min(max(estimate, Self.minimumEstimate), Self.maximumEstimate)
+    }
+
+    /// Learned statistics for every tracked model, sorted by model name.
+    public func statistics() -> [ModelStatistics] {
+        lock.lock()
+        defer { lock.unlock() }
+        return store.models.keys.sorted().map { model in
+            let rates = (store.models[model] ?? [])
+                .map { $0.seconds / Double(max($0.length, 1)) * 1000 }
+                .sorted()
+            let kept = Self.interQuartileRange(of: rates)
+            return ModelStatistics(
+                model: model,
+                sampleCount: rates.count,
+                medianSeconds: rates.isEmpty ? 0 : Self.median(of: rates),
+                interQuartileMeanSeconds: rates.isEmpty ? 0 : Self.mean(of: kept),
+                firstQuartileSeconds: rates.isEmpty ? 0 : Self.firstQuartile(of: rates),
+                thirdQuartileSeconds: rates.isEmpty ? 0 : Self.thirdQuartile(of: rates)
+            )
+        }
+    }
+
+    // MARK: Rate helpers (seconds per 1000 characters, sorted input required)
+
+    private static func median(of sorted: [Double]) -> Double {
+        guard !sorted.isEmpty else { return 0 }
+        let mid = sorted.count / 2
+        return sorted.count % 2 == 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2
+    }
+
+    private static func mean(of values: ArraySlice<Double>) -> Double {
+        values.isEmpty ? 0 : values.reduce(0, +) / Double(values.count)
+    }
+
+    private static func firstQuartile(of sorted: [Double]) -> Double {
+        median(of: Array(sorted.prefix((sorted.count + 1) / 2)))
+    }
+
+    private static func thirdQuartile(of sorted: [Double]) -> Double {
+        median(of: Array(sorted.suffix((sorted.count + 1) / 2)))
+    }
+
+    /// The middle half of the sorted rates (the values the IQM averages).
+    private static func interQuartileRange(of sorted: [Double]) -> ArraySlice<Double> {
+        let trim = sorted.count / 4
+        return trim > 0 ? sorted[trim..<(sorted.count - trim)] : sorted[...]
     }
 
     private func persist() {

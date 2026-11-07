@@ -398,6 +398,28 @@ struct ResponseTimeEstimatorTests {
         #expect(abs(estimate! - 2.0) < 0.01)
     }
 
+    @Test func statisticsReportMedianIQMAndQuartiles() {
+        let estimator = ResponseTimeEstimator(fileURL: nil)
+        // Rates in s per 1000 chars: 1, 2, 2, 2, 2, 3, 3, 50
+        for seconds in [1.0, 2.0, 2.0, 2.0, 2.0, 3.0, 3.0, 50.0] {
+            estimator.record(model: "m", inputLength: 1000, seconds: seconds)
+        }
+        estimator.record(model: "other", inputLength: 2000, seconds: 4) // 2.0 s/kchars
+        let stats = estimator.statistics()
+        #expect(stats.count == 2)
+        #expect(stats.map(\.model) == ["m", "other"])
+        let m = stats.first { $0.model == "m" }!
+        #expect(m.sampleCount == 8)
+        #expect(m.medianSeconds == 2.0)
+        // IQM keeps the middle four rates [2, 2, 2, 3] (the 1 and the 50
+        // are trimmed away) -> 2.25.
+        #expect(abs(m.interQuartileMeanSeconds - 2.25) < 0.01)
+        // Tukey hinges: Q1 = median of lower half [1,2,2,2] = 2.0,
+        // Q3 = median of upper half [2,3,3,50] = 3.0.
+        #expect(m.firstQuartileSeconds == 2.0)
+        #expect(m.thirdQuartileSeconds == 3.0)
+    }
+
     @Test func engineEmitsRequestTimingOnSuccess() async {
         let recorder = EventRecorder()
         let backend = FakeBackend()
