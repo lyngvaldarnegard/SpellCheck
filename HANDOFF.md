@@ -281,7 +281,7 @@ notes, appcast and notes files follow the tag as usual.
 
 **v1.0.0 planned content — updated default prompts (user instruction,
 06.11.2026)**: the user's new default prompt list is PREPARED on the draft
-branch **`vibe/v1-default-prompts`** (head e838a33) — do NOT ship v1.0.0
+branch **`vibe/v1-default-prompts`** (head 572639c) — do NOT ship v1.0.0
 without merging it. The draft: 19 prompts from the user's saved list;
 Allvit, Napoloen-as-named and Juss dropped (Juss is Norway-specific);
 Napoloen's text lives on as **Humanize** (Norwegian sections removed);
@@ -299,8 +299,15 @@ Guarded by a new persisted `importedDefaultPromptsVersion` + code constant
 ONCE per defaults version, so a user who later deletes an imported default
 does not get it back on the next launch. Tests: Core 79/79 (import-by-title,
 same-title never replaced, once-per-version, deletion stays deleted),
-Engine 49/49, App parse-checked on the branch. The app was NOT
-updated/released with these prompts yet (explicit user instruction —
+Engine 49/49, App parse-checked on the branch. **Autosave (user request,
+same draft)**: Settings and Prompt Editor now persist EVERY change —
+debounced 0.5 s after the last edit (title, text, icon, add, delete,
+drag-to-reorder, any setting). ⌘S and the Save button still save
+immediately, and the Saved indicator still confirms. `applySettings` now
+only re-registers the hotkey / recreates the engine when the relevant
+settings actually changed (autosave fires often; recreating the engine per
+keystroke would drop a running correction's busy flag). The app was NOT
+updated/released with any of this yet (explicit user instruction —
 merge + release as v1.0.0 when the user says go).
 
 macOS:
