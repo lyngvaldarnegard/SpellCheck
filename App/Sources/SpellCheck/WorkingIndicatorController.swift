@@ -1,20 +1,27 @@
 import AppKit
 
-/// FixKey-style "working" indicator: a small dark rounded spinner shown near
-/// the mouse pointer while the AI request is in flight, so the user gets an
-/// immediate visual confirmation that the text was sent and is being worked
-/// on — even if the menu bar is out of sight.
+/// FixKey-style "working" indicator: a circular progress ring shown near the
+/// mouse pointer while the AI request is in flight, so the user gets an
+/// immediate visual confirmation that the text was sent — plus a sense of
+/// how long is left, based on learned response times.
+///
+/// The ring fills from the top clockwise over the ESTIMATED response time;
+/// when the request outlives the estimate the arc wraps and keeps filling
+/// until the correction completes and the indicator disappears. Without an
+/// estimate (first requests with a model) one revolution takes 1 second.
 ///
 /// The panel is non-activating, never becomes key, ignores all mouse events
-/// (clicks pass through to whatever is underneath) and never steals focus from
-/// the user's work.
+/// (clicks pass through to whatever is underneath) and never steals focus
+/// from the user's work.
 @MainActor
 final class WorkingIndicatorController {
 
     static let panelSize: CGFloat = 40
+    /// Revolution time when no response-time estimate exists yet.
+    static let defaultSecondsPerRevolution: Double = 1.0
 
     private var panel: NSPanel?
-    private let indicator = NSProgressIndicator()
+    private let ring = CircularProgressView(frame: NSRect(x: 0, y: 0, width: 28, height: 28))
 
     private func buildPanel() -> NSPanel {
         let panel = NSPanel(
@@ -37,38 +44,38 @@ final class WorkingIndicatorController {
         panel.appearance = NSAppearance(named: .darkAqua)
 
         let content = NSView()
-        content.wantsLayer = true
-        content.layer?.backgroundColor = NSColor(red: 0.11, green: 0.11, blue: 0.12, alpha: 0.96).cgColor
-        content.layer?.cornerRadius = 12
-
-        indicator.style = .spinning
-        indicator.controlSize = .regular
-        indicator.translatesAutoresizingMaskIntoConstraints = false
-        indicator.isDisplayedWhenStopped = false
-        content.addSubview(indicator)
-
+        content.translatesAutoresizingMaskIntoConstraints = false
+        ring.translatesAutoresizingMaskIntoConstraints = false
+        content.addSubview(ring)
         NSLayoutConstraint.activate([
-            indicator.centerXAnchor.constraint(equalTo: content.centerXAnchor),
-            indicator.centerYAnchor.constraint(equalTo: content.centerYAnchor),
+            ring.centerXAnchor.constraint(equalTo: content.centerXAnchor),
+            ring.centerYAnchor.constraint(equalTo: content.centerYAnchor),
+            ring.widthAnchor.constraint(equalToConstant: 28),
+            ring.heightAnchor.constraint(equalToConstant: 28),
         ])
-
         panel.contentView = content
         return panel
     }
 
-    /// Shows (or repositions) the spinner just above the current mouse
-    /// location. Never activates the app and never takes keyboard focus.
-    func show() {
+    /// Shows (or repositions) the ring just above the current mouse location.
+    /// `estimatedSeconds` is the learned estimate for this request; nil means
+    /// no samples yet, in which case one revolution takes one second.
+    /// If the ring is already showing (e.g. the second `.working` event of the
+    /// same run), the animation is NOT restarted — only the position is
+    /// refreshed.
+    func show(estimatedSeconds: Double?) {
         let panel = self.panel ?? buildPanel()
         self.panel = panel
         position(panel)
+        if !isShowing {
+            ring.start(estimatedSeconds: estimatedSeconds ?? Self.defaultSecondsPerRevolution)
+        }
         panel.orderFrontRegardless()
-        indicator.startAnimation(nil)
     }
 
-    /// Hides the spinner and stops the animation.
+    /// Hides the ring and stops the animation.
     func hide() {
-        indicator.stopAnimation(nil)
+        ring.stop()
         panel?.orderOut(nil)
     }
 
@@ -80,7 +87,7 @@ final class WorkingIndicatorController {
         guard let visible = screen?.visibleFrame else { return }
         var x = mouse.x - Self.panelSize / 2
         var y = mouse.y + 28
-        // Keep the whole indicator on screen.
+        // Keep the whole ring on screen.
         x = min(max(x, visible.minX + 4), visible.maxX - Self.panelSize - 4)
         if y + Self.panelSize > visible.maxY {
             y = mouse.y - Self.panelSize - 8

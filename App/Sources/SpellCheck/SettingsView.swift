@@ -8,6 +8,7 @@ struct SettingsView: View {
     @State private var settings: AppSettings
     @State private var saveState: SaveState = .idle
     @State private var saveError: String?
+    @State private var autosaveTask: Task<Void, Never>?
     private let controller: SettingsWindowController
 
     private enum SaveState: Equatable {
@@ -96,6 +97,10 @@ struct SettingsView: View {
                 Toggle("Launch at login", isOn: $settings.launchAtLogin)
             }
 
+            Section("Response Times") {
+                responseTimes
+            }
+
             Section {
                 HStack {
                     switch saveState {
@@ -117,6 +122,17 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .frame(minWidth: 560, minHeight: 480)
+        // Autosave: every change persists (debounced, so typing does not
+        // write to disk per keystroke). ⌘S and the Save button still save
+        // immediately.
+        .onChange(of: settings) {
+            autosaveTask?.cancel()
+            autosaveTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                guard !Task.isCancelled else { return }
+                await saveSettings()
+            }
+        }
         .alert("Could not save settings", isPresented: .init(
             get: { saveError != nil },
             set: { if !$0 { saveError = nil } }
@@ -124,6 +140,36 @@ struct SettingsView: View {
             Button("OK") {}
         } message: {
             Text(saveError ?? "")
+        }
+    }
+
+    /// Learned per-model response times (they drive the progress ring's
+    /// speed). All values are seconds per 1000 characters.
+    @ViewBuilder
+    private var responseTimes: some View {
+        let stats = controller.responseTimeStats?() ?? []
+        if stats.isEmpty {
+            Text("No response times learned yet — they are collected automatically as you use the app.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        } else {
+            ForEach(stats, id: \.model) { stat in
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack {
+                        Text(stat.model).font(.body.weight(.semibold))
+                        Spacer()
+                        Text("\(stat.sampleCount) samples")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                    Text("Median \(stat.medianSeconds, format: .number.precision(.fractionLength(1))) s · IQM \(stat.interQuartileMeanSeconds, format: .number.precision(.fractionLength(1))) s · IQR \(stat.firstQuartileSeconds, format: .number.precision(.fractionLength(1)))–\(stat.thirdQuartileSeconds, format: .number.precision(.fractionLength(1))) s")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            Text("Seconds per 1000 characters, from your own requests. These drive the progress ring's speed; nothing is sent anywhere.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -319,6 +365,9 @@ private struct HotKeyRecorderRepresentable: NSViewRepresentable {
 final class SettingsWindowController: NSWindowController {
     var initialSettings: AppSettings
     private var saveViaDelegate: (@MainActor (AppSettings) async throws -> Void)?
+    /// Supplies the learned per-model response-time statistics for the
+    /// Settings section (set by AppDelegate once setup completes).
+    var responseTimeStats: (() -> [ResponseTimeEstimator.ModelStatistics])?
 
     init(settings: AppSettings) {
         self.initialSettings = settings

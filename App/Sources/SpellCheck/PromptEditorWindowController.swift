@@ -76,6 +76,7 @@ private struct PromptEditorView: View {
     @State private var searchText = ""
     @State private var saveState: SaveState = .idle
     @State private var saveError: String?
+    @State private var autosaveTask: Task<Void, Never>?
 
     private enum SaveState: Equatable {
         case idle
@@ -138,6 +139,17 @@ private struct PromptEditorView: View {
         }
         .background(Color(nsColor: .windowBackgroundColor))
         .onAppear { prompts = controller.currentPrompts }
+        // Autosave: every change persists — title, text, icon, add, delete
+        // and drag-to-reorder (debounced, so typing does not write to disk
+        // per keystroke). ⌘S and the Save button still save immediately.
+        .onChange(of: prompts) {
+            autosaveTask?.cancel()
+            autosaveTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                guard !Task.isCancelled else { return }
+                await savePrompts()
+            }
+        }
         .alert("Could not save prompts", isPresented: .init(
             get: { saveError != nil },
             set: { if !$0 { saveError = nil } }

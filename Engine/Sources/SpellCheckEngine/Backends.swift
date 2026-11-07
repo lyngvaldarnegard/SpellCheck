@@ -15,6 +15,7 @@ public struct OpenAICompatibleBackend: CorrectionBackend {
 
     public var displayName: String { "OpenAI-compatible API" }
     public var isReady: Bool { !apiKey.isEmpty }
+    public var modelKey: String { model }
 
     public init(apiKey: String, model: String, baseURL: String) {
         self.apiKey = apiKey
@@ -136,6 +137,9 @@ public struct FallbackBackend: CorrectionBackend {
 
     public var displayName: String { primary.displayName }
     public var isReady: Bool { primary.isReady }
+    /// Timing samples are attributed to the primary model; a fallback retry
+    /// takes longer, but the estimate only needs to be a rough guide.
+    public var modelKey: String { primary.modelKey }
 
     public func correct(text: String, prompt: String, sharedPrompt: String) async throws -> String {
         do {

@@ -59,6 +59,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// finishes, so nothing of ours jumps forward mid-workflow.
     private var windowsLoweredForRun = false
     private var workingIndicator: WorkingIndicatorController?
+    /// Learns per-model response times (persisted) to drive the progress ring.
+    private var responseTimeEstimator: ResponseTimeEstimator?
+    /// UTF-16 length of the captured text of the run currently in flight.
+    private var lastRunInputLength = 0
     private(set) var settings: AppSettings = .default
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -67,6 +71,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .appendingPathComponent("SpellCheck", isDirectory: true)
         let settingsFile = supportDir.appendingPathComponent("settings.json")
         let isFirstRun = !FileManager.default.fileExists(atPath: settingsFile.path)
+        responseTimeEstimator = ResponseTimeEstimator(
+            fileURL: supportDir.appendingPathComponent("response-times.json")
+        )
         settingsStore = try? SettingsStore(directory: supportDir)
         NSApp.setActivationPolicy(.accessory)
 
@@ -110,6 +117,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
 
         settingsController = SettingsWindowController(settings: settings)
+        settingsController.responseTimeStats = { [weak self] in
+            self?.responseTimeEstimator?.statistics() ?? []
+        }
         settingsController.configureSave { [weak self] newSettings in
             guard let self else { return }
             // The Settings window never edits prompts — always keep the
@@ -163,17 +173,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applySettings(_ newSettings: AppSettings) {
+        let old = settings
         settings = newSettings
-        registerHotKey()
+        // Autosave fires often; only redo the expensive/global things when
+        // the relevant settings actually changed. Recreating the engine on
+        // every keystroke would also drop the busy flag of a running
+        // correction, so backend-affecting changes are compared explicitly.
+        if old.hotKey != newSettings.hotKey {
+            registerHotKey()
+        }
         statusBarController?.apply(newSettings)
-        engine = CorrectionEngine(
-            backend: makeBackend(from: newSettings),
-            source: textSource,
-            sharedPrompt: newSettings.sharedPrompt,
-            onEvent: { [weak self] event in
-                Task { @MainActor in self?.handle(event) }
-            }
-        )
+        if old.apiKey != newSettings.apiKey
+            || old.model != newSettings.model
+            || old.backupModel != newSettings.backupModel
+            || old.baseURL != newSettings.baseURL
+            || old.sharedPrompt != newSettings.sharedPrompt {
+            engine = CorrectionEngine(
+                backend: makeBackend(from: newSettings),
+                source: textSource,
+                sharedPrompt: newSettings.sharedPrompt,
+                onEvent: { [weak self] event in
+                    Task { @MainActor in self?.handle(event) }
+                }
+            )
+        }
         promptEditorController?.reload(prompts: newSettings.prompts)
         settingsController?.reload(settings: newSettings)
     }
@@ -288,6 +311,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func runPrompt(_ prompt: Prompt, on grabbed: GrabbedText?) {
         guard let engine, let grabbed else { return }
+        lastRunInputLength = grabbed.scope.text.utf16.count
         Task { await engine.run(prompt: prompt, on: grabbed) }
     }
 
@@ -321,8 +345,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusBarController?.handle(event)
         switch event {
         case .working:
-            // FixKey-style spinner near the cursor while the AI is working.
-            workingIndicator?.show()
+            // Circular progress ring near the cursor: fills over the
+            // learned response-time estimate for this model + text length.
+            workingIndicator?.show(estimatedSeconds: responseTimeEstimator?
+                .estimate(model: engine?.modelKey ?? settings.model, inputLength: lastRunInputLength))
         case .succeeded, .failed, .replaceFailed:
             workingIndicator?.hide()
             // Terminal: restore our own windows' level now that the
@@ -333,12 +359,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 endPickerSession()
             }
         case .busy:
-            // Another edit was requested while one is running: the spinner
+            // Another edit was requested while one is running: the ring
             // stays up (the original correction is still in flight) and the
             // rejection is menu-bar-only feedback. Nothing is edited.
             break
         case .idle:
             workingIndicator?.hide()
+        case .requestTiming(let model, let seconds, let inputLength):
+            // Learn from the finished request so the next ring is accurate.
+            responseTimeEstimator?.record(model: model, inputLength: inputLength, seconds: seconds)
         }
         // Real API/configuration/permission errors still alert. Replacement
         // failures (including uncertain readback) and busy rejections stay

@@ -140,17 +140,25 @@ struct SettingsTests {
         var settings = Settings.default
         settings.hotKey = HotKey(keyCode: 1, modifiers: ModifierFlags.command | ModifierFlags.shift)
         settings.didSeedDefaultPrompts = true
+        settings.importedDefaultPromptsVersion = Settings.defaultPromptsVersion
         let migrated = settings.migrated()
         #expect(migrated.hotKey == settings.hotKey)
         #expect(migrated == settings)
     }
 
-    @Test func migrationDoesNotReseedAfterUserDeletesAllPrompts() {
+    @Test func appUpdateImportsMissingDefaultsOnceAfterUserDeletesAllPrompts() {
+        // An app update imports default prompts the user's list is missing —
+        // once. After that, deliberate deletions stay deleted.
         var settings = Settings.default
         settings.didSeedDefaultPrompts = true
         settings.prompts = []
         let migrated = settings.migrated()
-        #expect(migrated.prompts.isEmpty)
+        #expect(migrated.prompts.map(\.name) == Prompt.defaultPrompts.map(\.name))
+        // Deleting them again must NOT re-import on the next launch.
+        var deleted = migrated
+        deleted.prompts = []
+        let again = deleted.migrated()
+        #expect(again.prompts.isEmpty)
     }
 
     @Test func lossyPromptDecodingKeepsHealthyEntries() throws {
@@ -199,11 +207,28 @@ struct SettingsTests {
         let data = try JSONEncoder().encode(existing)
         let decoded = try JSONDecoder().decode(Settings.self, from: data)
         let migrated = decoded.migrated()
-        #expect(migrated.prompts == existing.prompts)
+        // The user's own prompts stay verbatim and FIRST in the list; only
+        // defaults with titles the list is missing are appended after them.
+        #expect(Array(migrated.prompts.prefix(2)) == existing.prompts)
+        #expect(migrated.prompts.count > 2)
         #expect(migrated.apiKey == "sk-keep-me")
         #expect(migrated.didSeedDefaultPrompts)
         let again = try JSONDecoder().decode(Settings.self, from: JSONEncoder().encode(migrated)).migrated()
         #expect(again == migrated)
+    }
+
+    @Test func appUpdateNeverReplacesSameTitledUserPrompts() {
+        // A user-edited "Fix Grammar" keeps its text; the update only adds
+        // titles that are missing entirely.
+        var settings = Settings.default
+        settings.didSeedDefaultPrompts = true
+        let custom = Prompt(name: "Fix Grammar", prompt: "MY CUSTOM TEXT", icon: PromptIcon.pen.rawValue)
+        settings.prompts = [custom]
+        let migrated = settings.migrated()
+        #expect(migrated.prompts.first == custom)
+        #expect(migrated.prompts.contains { $0.name == "Fix Grammar" && $0.prompt == "MY CUSTOM TEXT" })
+        #expect(migrated.prompts.contains { $0.name == "Humanize" })
+        #expect(migrated.prompts.filter { $0.name == "Fix Grammar" }.count == 1)
     }
 
     @Test func promptOrderRoundTripsAndSurvivesMigration() throws {
@@ -218,8 +243,11 @@ struct SettingsTests {
         let decoded = try JSONDecoder().decode(Settings.self, from: data)
         #expect(decoded.prompts.map(\.name) == ["First", "Second", "Third"])
         let migrated = decoded.migrated()
-        #expect(migrated.prompts.map(\.name) == ["First", "Second", "Third"])
-        #expect(migrated.prompts.map(\.icon) == [PromptIcon.pen.rawValue, PromptIcon.check.rawValue, PromptIcon.sparkle.rawValue])
+        // User order is preserved at the FRONT; missing defaults are appended
+        // after the user's own prompts, never interleaved or replacing them.
+        #expect(Array(migrated.prompts.map(\.name).prefix(3)) == ["First", "Second", "Third"])
+        #expect(migrated.prompts.map(\.icon).prefix(3) == [PromptIcon.pen.rawValue, PromptIcon.check.rawValue, PromptIcon.sparkle.rawValue])
+        #expect(migrated.prompts.count == 3 + Prompt.defaultPrompts.count)
     }
 
     @Test func migrationSeedsOnlyOnce() {

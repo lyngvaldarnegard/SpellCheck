@@ -16,6 +16,10 @@ public enum EngineEvent: Sendable, Equatable {
     /// edit is NOT started (no duplicate request, no second paste); the user
     /// is told why instead of the request silently disappearing.
     case busy(String)
+    /// Observed response time of one successful AI request, for response-time
+    /// estimation (progress ring). `inputLength` is the captured text's
+    /// UTF-16 length.
+    case requestTiming(model: String, seconds: Double, inputLength: Int)
 }
 
 /// Orchestrates one AI edit: grab text, ask the backend, then swap the result
@@ -33,6 +37,10 @@ public actor CorrectionEngine {
 
     /// True while an edit is in flight.
     public var isBusy: Bool { busy }
+
+    /// The model identity the backend talks to (for response-time
+    /// estimation in the UI).
+    public var modelKey: String { backend.modelKey }
 
     public init(
         backend: any CorrectionBackend,
@@ -91,7 +99,10 @@ public actor CorrectionEngine {
             eventHandler(.failed("There is no text to work on"))
             return
         }
+        let requestStarted = Date()
         let response = try await backend.correct(text: original, prompt: prompt.prompt, sharedPrompt: sharedPrompt)
+        let requestSeconds = Date().timeIntervalSince(requestStarted)
+        eventHandler(.requestTiming(model: backend.modelKey, seconds: requestSeconds, inputLength: original.utf16.count))
         let corrected = ResponseCleaner.clean(response, input: original)
         guard !corrected.isEmpty else {
             eventHandler(.failed("The API returned an empty result"))

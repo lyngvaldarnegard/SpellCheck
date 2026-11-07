@@ -319,3 +319,126 @@ extension EngineEvent {
         }
     }
 }
+
+// MARK: Response-time estimation
+
+struct ResponseTimeEstimatorTests {
+
+    @Test func noSamplesYieldsNoEstimate() {
+        let estimator = ResponseTimeEstimator(fileURL: nil)
+        #expect(estimator.estimate(model: "mistral-small-latest", inputLength: 100) == nil)
+    }
+
+    @Test func estimateScalesWithInputLength() {
+        let estimator = ResponseTimeEstimator(fileURL: nil)
+        // Two samples for the same model: 1000 chars took 2 s, 3000 chars 6 s
+        // → ~0.002 s/char → 500 chars ≈ 1 s.
+        estimator.record(model: "m", inputLength: 1000, seconds: 2)
+        estimator.record(model: "m", inputLength: 3000, seconds: 6)
+        let estimate = estimator.estimate(model: "m", inputLength: 500)
+        #expect(estimate != nil)
+        #expect(abs(estimate! - 1.0) < 0.2)
+        // Double the text → roughly double the time.
+        let longer = estimator.estimate(model: "m", inputLength: 1000)
+        #expect(abs(longer! - 2.0) < 0.4)
+    }
+
+    @Test func ownSamplesBeatGlobalFallback() {
+        let estimator = ResponseTimeEstimator(fileURL: nil)
+        estimator.record(model: "flash", inputLength: 1000, seconds: 1)
+        // A model with no samples yet falls back to the rate learned across
+        // ALL models (user spec) instead of returning nothing.
+        #expect(estimator.estimate(model: "large", inputLength: 1000) != nil)
+        #expect(abs(estimator.estimate(model: "large", inputLength: 1000)! - 1.0) < 0.01)
+        // The model's own samples take precedence once they exist.
+        estimator.record(model: "large", inputLength: 1000, seconds: 10)
+        #expect(abs(estimator.estimate(model: "large", inputLength: 1000)! - 10.0) < 0.01)
+    }
+
+    @Test func trulyEmptyStoreYieldsNoEstimate() {
+        let estimator = ResponseTimeEstimator(fileURL: nil)
+        #expect(estimator.estimate(model: "anything", inputLength: 1000) == nil)
+    }
+
+    @Test func interQuartileMeanTrimsBothEnds() {
+        // 8 samples of rates: the IQM must drop the lowest quarter and the
+        // highest quarter, then average the middle half.
+        let estimator = ResponseTimeEstimator(fileURL: nil)
+        // rates in s/char: 0.001 x2, 0.002 x4, 0.050 x2 (outliers both ends)
+        estimator.record(model: "m", inputLength: 1000, seconds: 1)   // 0.001
+        estimator.record(model: "m", inputLength: 1000, seconds: 1)   // 0.001
+        estimator.record(model: "m", inputLength: 1000, seconds: 2)   // 0.002
+        estimator.record(model: "m", inputLength: 1000, seconds: 2)   // 0.002
+        estimator.record(model: "m", inputLength: 1000, seconds: 2)   // 0.002
+        estimator.record(model: "m", inputLength: 1000, seconds: 2)   // 0.002
+        estimator.record(model: "m", inputLength: 1000, seconds: 50)  // 0.050
+        estimator.record(model: "m", inputLength: 1000, seconds: 50)  // 0.050
+        // IQM keeps the middle four 0.002 rates -> 2 s for 1000 chars.
+        let estimate = estimator.estimate(model: "m", inputLength: 1000)
+        #expect(abs(estimate! - 2.0) < 0.01)
+    }
+
+    @Test func outlierCannotDistortTheEstimate() {
+        let estimator = ResponseTimeEstimator(fileURL: nil)
+        for _ in 0..<5 { estimator.record(model: "m", inputLength: 100, seconds: 1) }
+        estimator.record(model: "m", inputLength: 100, seconds: 60) // one outlier
+        // Median rate stays ~1s per 100 chars.
+        let estimate = estimator.estimate(model: "m", inputLength: 100)
+        #expect(abs(estimate! - 1.0) < 0.3)
+    }
+
+    @Test func samplesPersistAcrossInstances() throws {
+        let file = FileManager.default.temporaryDirectory
+            .appendingPathComponent("spellcheck-timing-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: file) }
+        let first = ResponseTimeEstimator(fileURL: file)
+        first.record(model: "m", inputLength: 1000, seconds: 2)
+        let reopened = ResponseTimeEstimator(fileURL: file)
+        let estimate = reopened.estimate(model: "m", inputLength: 1000)
+        #expect(abs(estimate! - 2.0) < 0.01)
+    }
+
+    @Test func statisticsReportMedianIQMAndQuartiles() {
+        let estimator = ResponseTimeEstimator(fileURL: nil)
+        // Rates in s per 1000 chars: 1, 2, 2, 2, 2, 3, 3, 50
+        for seconds in [1.0, 2.0, 2.0, 2.0, 2.0, 3.0, 3.0, 50.0] {
+            estimator.record(model: "m", inputLength: 1000, seconds: seconds)
+        }
+        estimator.record(model: "other", inputLength: 2000, seconds: 4) // 2.0 s/kchars
+        let stats = estimator.statistics()
+        #expect(stats.count == 2)
+        #expect(stats.map(\.model) == ["m", "other"])
+        let m = stats.first { $0.model == "m" }!
+        #expect(m.sampleCount == 8)
+        #expect(m.medianSeconds == 2.0)
+        // IQM keeps the middle four rates [2, 2, 2, 3] (the 1 and the 50
+        // are trimmed away) -> 2.25.
+        #expect(abs(m.interQuartileMeanSeconds - 2.25) < 0.01)
+        // Tukey hinges: Q1 = median of lower half [1,2,2,2] = 2.0,
+        // Q3 = median of upper half [2,3,3,50] = 3.0.
+        #expect(m.firstQuartileSeconds == 2.0)
+        #expect(m.thirdQuartileSeconds == 3.0)
+    }
+
+    @Test func engineEmitsRequestTimingOnSuccess() async {
+        let recorder = EventRecorder()
+        let backend = FakeBackend()
+        backend.response = "Corrected text"
+        let source = FakeSource()
+        source.scope = .selection("some selected text")
+        let engine = CorrectionEngine(backend: backend, source: source, onEvent: {
+            recorder.record($0)
+        })
+
+        await engine.run(prompt: Prompt(name: "P", prompt: "p"))
+
+        guard case .requestTiming(let model, let seconds, let inputLength) =
+              recorder.events.first(where: { if case .requestTiming = $0 { return true }; return false }) ?? .idle else {
+            Issue.record("expected a requestTiming event")
+            return
+        }
+        #expect(model == backend.modelKey)
+        #expect(seconds >= 0)
+        #expect(inputLength == "some selected text".utf16.count)
+    }
+}

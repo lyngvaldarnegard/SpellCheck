@@ -128,9 +128,38 @@ struct PromptTests {
         }
     }
 
-    @Test func fixGrammarPromptCarriesLegalTermsParagraph() {
-        let fix = Prompt.defaultPrompts.first { $0.name == "Fix Grammar" }
-        #expect(fix?.prompt.contains("skatteloven") == true)
+    @Test func defaultPromptsContainNoNorwegianText() {
+        // All GitHub/repository content must be English-only (user rule),
+        // including the seeded prompt texts. The two Norwegian-language
+        // translation prompts are exempt: their names and bodies necessarily
+        // contain the target language's own name (Bokmål/Nynorsk).
+        for prompt in Prompt.defaultPrompts {
+            if prompt.name.hasPrefix("Translate to Norwegian") { continue }
+            for scalar in prompt.prompt.unicodeScalars {
+                #expect(["æ", "ø", "å", "Æ", "Ø", "Å"].contains(String(scalar)) == false)
+            }
+        }
+    }
+
+    @Test func defaultPromptsDropAllvitNapoloenAndJuss() {
+        #expect(Prompt.defaultPrompts.contains { $0.name == "Allvit" } == false)
+        #expect(Prompt.defaultPrompts.contains { $0.name == "Napoloen" } == false)
+        #expect(Prompt.defaultPrompts.contains { $0.name == "Juss" } == false)
+        // The Napoloen prompt survives as "Humanize" (Norwegian sections removed).
+        #expect(Prompt.defaultPrompts.contains { $0.name == "Humanize" } == true)
+    }
+
+    @Test func translationPromptsAreAtTheBottomOfTheDefaults() {
+        let names = Prompt.defaultPrompts.map(\.name)
+        let expectedTranslations = ["Translate to English", "Translate to Esperanto",
+                                   "Translate to Norwegian (Bokmål)", "Translate to Norwegian (Nynorsk)"]
+        #expect(names.filter { $0.hasPrefix("Translate to") } == expectedTranslations)
+        // Every translation prompt comes after every non-translation prompt.
+        if let firstTranslation = names.firstIndex(where: { $0.hasPrefix("Translate to") }) {
+            for name in names[..<firstTranslation] {
+                #expect(name.hasPrefix("Translate to") == false)
+            }
+        }
     }
 
     @Test func promptIsCodable() throws {
