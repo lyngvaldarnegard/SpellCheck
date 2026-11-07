@@ -331,7 +331,8 @@ private struct ModelWhitelistField: View {
                             else if !on { selection.removeAll { $0 == model } }
                         }
                     ))
-                    .controlSize(.small)
+                    .toggleStyle(.checkbox)
+                    .controlSize(.regular)
                 }
             }
             if let fetchError {
