@@ -31,8 +31,9 @@ public final class ResponseTimeEstimator: @unchecked Sendable {
     private static let maximumEstimate: Double = 120
 
     /// Learned response-time statistics for one model, shown in Settings.
-    /// All times are normalized to seconds per 1000 characters so samples of
-    /// different text lengths are comparable.
+    /// All times are normalized to seconds per 100 tokens (the standard
+    /// estimate of 4 characters per token) so samples of different text
+    /// lengths are comparable in the units the API actually bills.
     public struct ModelStatistics: Equatable, Sendable {
         public let model: String
         public let sampleCount: Int
@@ -106,8 +107,10 @@ public final class ResponseTimeEstimator: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return store.models.keys.sorted().map { model in
+            // seconds per 100 tokens: length chars ≈ length/4 tokens,
+            // so per 100 tokens = seconds * 100 / (length/4) = seconds * 400 / length.
             let rates = (store.models[model] ?? [])
-                .map { $0.seconds / Double(max($0.length, 1)) * 1000 }
+                .map { $0.seconds / Double(max($0.length, 1)) * 400 }
                 .sorted()
             let kept = Self.interQuartileRange(of: rates)
             return ModelStatistics(

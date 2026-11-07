@@ -287,8 +287,8 @@ description still says "FixKey clone" — the agent token CANNOT change it
 using AI").
 
 **NEXT VERSION: v1.1 — planned content (user instruction, 07.11.2026)**:
-review the default prompts, because several overlap heavily with the
-prompts the user had in FixKey. Do NOT start this before the user says so.
+review and refresh the shipped default prompt list (wording, usefulness,
+deduplication). Do NOT start this before the user says so.
 
 **v1.0.0 planned content — updated default prompts (user instruction,
 06.11.2026)**: the user's new default prompt list is PREPARED on the draft

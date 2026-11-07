@@ -144,7 +144,7 @@ struct SettingsView: View {
     }
 
     /// Learned per-model response times (they drive the progress ring's
-    /// speed). All values are seconds per 1000 characters.
+    /// speed). All values are seconds per 100 tokens (4 chars/token).
     @ViewBuilder
     private var responseTimes: some View {
         let stats = controller.responseTimeStats?() ?? []
@@ -167,7 +167,7 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            Text("Seconds per 1000 characters, from your own requests. These drive the progress ring's speed; nothing is sent anywhere.")
+            Text("Seconds per 100 tokens (estimated at 4 characters per token), from your own requests. These drive the progress ring's speed; nothing is sent anywhere.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }

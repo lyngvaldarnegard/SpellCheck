@@ -14,9 +14,9 @@ The app was built by a different chat (Vibe Nuage Agent). The Vibe chat's job: h
   Brand/clone wording removed from README/HANDOFF/VIBE-CONTEXT; the GitHub
   repo description still reads "FixKey clone" and must be changed by Sigurd
   manually (agent token got 403 on repo edit).
-- **v1.1 planned (Sigurd's instruction, not started)**: go over the default
-  prompts — several overlap heavily with his old FixKey prompts; rewrite or
-  replace them. Only after the user says go.
+- **v1.1 planned (Sigurd's instruction, not started)**: review and refresh
+  the shipped default prompt list (wording, usefulness, deduplication).
+  Only after the user says go.
 
 ## Status (06.11.2026 — v0.2.10 session)
 
