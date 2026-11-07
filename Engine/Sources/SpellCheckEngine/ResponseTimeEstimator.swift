@@ -6,10 +6,13 @@ import Foundation
 /// One sample is recorded per successful request: the captured text's length
 /// and the observed response time, attributed to the model that served it.
 /// The estimate assumes response time scales roughly with input length
-/// (the user's observation) and uses the MEDIAN seconds-per-character rate of
-/// that model's recent samples, so one slow outlier cannot distort the
-/// estimate. Samples persist across launches in a small JSON file; nothing
-/// sensitive (no text, no prompts, no keys) is ever stored — only numbers.
+/// (the user's observation) and uses the INTER-QUARTILE MEAN (IQM) of the
+/// seconds-per-character rates: the top and bottom quarters of the sorted
+/// rates are discarded and the middle half is averaged. This uses more of
+/// the data than a plain median (smoother estimates) while still trimming
+/// slow outliers (network stalls, capacity hiccups). Samples persist across
+/// launches in a small JSON file; nothing sensitive (no text, no prompts,
+/// no keys) is ever stored — only numbers.
 public final class ResponseTimeEstimator: @unchecked Sendable {
 
     private struct Sample: Codable {
@@ -73,15 +76,16 @@ public final class ResponseTimeEstimator: @unchecked Sendable {
             : []
         let samples = own.isEmpty ? Array(fallback) : own
         guard !samples.isEmpty else { return nil }
-        // Median seconds-per-character rate, scaled to this request's length.
+        // Inter-quartile mean of the seconds-per-character rates, scaled to
+        // this request's length. With very few samples nothing is trimmed
+        // (a plain mean), which is the IQM's natural small-n behavior.
         let rates = samples
             .map { $0.seconds / Double(max($0.length, 1)) }
             .sorted()
-        let mid = rates.count / 2
-        let medianRate = rates.count % 2 == 1
-            ? rates[mid]
-            : (rates[mid - 1] + rates[mid]) / 2
-        let estimate = medianRate * Double(max(inputLength, 1))
+        let trim = rates.count / 4
+        let kept = trim > 0 ? rates[trim..<(rates.count - trim)] : rates[...]
+        let rate = kept.reduce(0, +) / Double(kept.count)
+        let estimate = rate * Double(max(inputLength, 1))
         return min(max(estimate, Self.minimumEstimate), Self.maximumEstimate)
     }
 

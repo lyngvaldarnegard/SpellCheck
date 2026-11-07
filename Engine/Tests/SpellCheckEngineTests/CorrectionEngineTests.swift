@@ -360,6 +360,24 @@ struct ResponseTimeEstimatorTests {
         #expect(estimator.estimate(model: "anything", inputLength: 1000) == nil)
     }
 
+    @Test func interQuartileMeanTrimsBothEnds() {
+        // 8 samples of rates: the IQM must drop the lowest quarter and the
+        // highest quarter, then average the middle half.
+        let estimator = ResponseTimeEstimator(fileURL: nil)
+        // rates in s/char: 0.001 x2, 0.002 x4, 0.050 x2 (outliers both ends)
+        estimator.record(model: "m", inputLength: 1000, seconds: 1)   // 0.001
+        estimator.record(model: "m", inputLength: 1000, seconds: 1)   // 0.001
+        estimator.record(model: "m", inputLength: 1000, seconds: 2)   // 0.002
+        estimator.record(model: "m", inputLength: 1000, seconds: 2)   // 0.002
+        estimator.record(model: "m", inputLength: 1000, seconds: 2)   // 0.002
+        estimator.record(model: "m", inputLength: 1000, seconds: 2)   // 0.002
+        estimator.record(model: "m", inputLength: 1000, seconds: 50)  // 0.050
+        estimator.record(model: "m", inputLength: 1000, seconds: 50)  // 0.050
+        // IQM keeps the middle four 0.002 rates -> 2 s for 1000 chars.
+        let estimate = estimator.estimate(model: "m", inputLength: 1000)
+        #expect(abs(estimate! - 2.0) < 0.01)
+    }
+
     @Test func outlierCannotDistortTheEstimate() {
         let estimator = ResponseTimeEstimator(fileURL: nil)
         for _ in 0..<5 { estimator.record(model: "m", inputLength: 100, seconds: 1) }
