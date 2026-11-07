@@ -307,6 +307,9 @@ private struct ModelWhitelistField: View {
     @State private var availableModels: [String] = []
     @State private var isFetching = false
     @State private var fetchError: String?
+    /// The fetched list can be huge: collapsed by default, only the
+    /// whitelisted models are shown; expand to check more.
+    @State private var showAllModels = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -319,9 +322,11 @@ private struct ModelWhitelistField: View {
                 }
                 .disabled(isFetching)
             }
-            // Entries whitelisted by hand that the fetched list does not
-            // contain are still shown and kept.
-            let listed = availableModels + selection.filter { !availableModels.contains($0) }
+            // Collapsed: only the whitelisted models. Expanded: the whole
+            // fetched list (plus whitelisted entries it does not contain).
+            let listed = showAllModels
+                ? availableModels + selection.filter { !availableModels.contains($0) }
+                : selection
             if !listed.isEmpty {
                 ForEach(listed, id: \.self) { model in
                     Toggle(model, isOn: Binding(
@@ -334,6 +339,12 @@ private struct ModelWhitelistField: View {
                     .toggleStyle(.checkbox)
                     .controlSize(.regular)
                 }
+            }
+            if !availableModels.isEmpty {
+                Button(showAllModels ? "Show whitelisted only" : "Show all models (\(availableModels.count))") {
+                    showAllModels.toggle()
+                }
+                .controlSize(.small)
             }
             if let fetchError {
                 Text(fetchError)

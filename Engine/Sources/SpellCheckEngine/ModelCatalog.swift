@@ -16,11 +16,20 @@ public enum ModelCatalog {
         public var data: [Model]
     }
 
-    /// Parses a `/models` response body into a sorted, de-duplicated list of IDs.
+    /// Parses a `/models` response body into a de-duplicated list of IDs.
+    /// Models with "latest" in the name come first (the provider's
+    /// current-generation variant of each family — mistral, magistral,
+    /// voxtral, ...), alphabetical within each group, then the rest
+    /// alphabetically.
     public static func parseModelIDs(from data: Data) throws -> [String] {
         let decoded = try JSONDecoder().decode(ListResponse.self, from: data)
         let ids = decoded.data.map(\.id).filter { !$0.isEmpty }
-        return Array(Set(ids)).sorted()
+        return Array(Set(ids)).sorted { lhs, rhs in
+            let lhsLatest = lhs.localizedCaseInsensitiveContains("latest")
+            let rhsLatest = rhs.localizedCaseInsensitiveContains("latest")
+            if lhsLatest != rhsLatest { return lhsLatest }
+            return lhs < rhs
+        }
     }
 
     /// Calls the provider's model list endpoint. The API key is optional —

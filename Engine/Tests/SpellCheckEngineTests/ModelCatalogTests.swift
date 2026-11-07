@@ -72,3 +72,40 @@ struct ModelCatalogTests {
         }
     }
 }
+
+struct ModelCatalogLatestFirstTests {
+
+    @Test func latestModelsComeFirstInFamilyGroups() throws {
+        let json = """
+        {"object":"list","data":[
+            {"id":"mistral-large-latest"},
+            {"id":"mistral-small-latest"},
+            {"id":"magistral-medium-latest"},
+            {"id":"voxtral-small-latest"},
+            {"id":"mistral-7b-chat"},
+            {"id":"codestral-2508"}
+        ]}
+        """
+        let ids = try ModelCatalog.parseModelIDs(from: Data(json.utf8))
+        // "latest" variants first, alphabetical within the group; then the rest.
+        #expect(ids == [
+            "magistral-medium-latest",
+            "mistral-large-latest",
+            "mistral-small-latest",
+            "voxtral-small-latest",
+            "codestral-2508",
+            "mistral-7b-chat",
+        ])
+    }
+
+    @Test func nonLatestListsStayAlphabetical() throws {
+        let json = """
+        {"object":"list","data":[
+            {"id":"b-model"},
+            {"id":"a-model"}
+        ]}
+        """
+        let ids = try ModelCatalog.parseModelIDs(from: Data(json.utf8))
+        #expect(ids == ["a-model", "b-model"])
+    }
+}
