@@ -332,7 +332,7 @@ private struct BoxPlot: View {
                 p.move(to: CGPoint(x: min, y: midY))
                 p.addLine(to: CGPoint(x: max, y: midY))
             }
-            .stroke(NSColor.separatorColor, lineWidth: 1)
+            .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
             // Box: Q1 to Q3.
             RoundedRectangle(cornerRadius: 2)
                 .fill(Color.green.opacity(0.25))
