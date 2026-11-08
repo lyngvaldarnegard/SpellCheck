@@ -185,7 +185,7 @@ struct SettingsView: View {
                 }
             }
             .frame(minHeight: CGFloat(stats.count) * 44)
-            Text("Box = Q1–Q3 · line = median · whiskers = min–max · ● = IQM. Seconds per 100 tokens (4 characters per token), from your own requests; ranked fastest first. Nothing is sent anywhere.")
+            Text("Box = Q1–Q3 · line = median · whiskers = min–max · blue dot = IQM. Seconds per 100 tokens (4 characters per token), from your own requests; ranked fastest first. Nothing is sent anywhere.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
@@ -346,16 +346,17 @@ private struct BoxPlot: View {
                 p.addLine(to: CGPoint(x: median, y: boxTop + boxHeight))
             }
             .stroke(Color.primary, lineWidth: 1.5)
-            // IQM marker: prominent, white-ringed so it never disappears
-            // inside the box, with its value printed above it.
+            // IQM marker: blue so it contrasts with the green box and
+            // median details, ringed so it never disappears inside the box;
+            // its value is printed next to it in the same blue.
             Circle()
-                .fill(Color.green)
+                .fill(Color.blue)
                 .frame(width: 8, height: 8)
                 .overlay(Circle().stroke(Color.primary.opacity(0.6), lineWidth: 1))
                 .offset(x: iqm - 4, y: midY - 4)
             Text(Self.value(stat.interQuartileMeanSeconds))
                 .font(.system(size: 9))
-                .foregroundStyle(Color.green)
+                .foregroundStyle(Color.blue)
                 .offset(x: iqm + 6, y: 0)
             // Numeric labels for min, Q1, median, Q3 and max under the
             // plot; labels too close to an already-drawn one are skipped so
@@ -372,7 +373,7 @@ private struct BoxPlot: View {
     }
 
     private static func value(_ seconds: Double) -> String {
-        "\(seconds, format: .number.precision(.fractionLength(1)))s"
+        String(format: "%.1fs", seconds)
     }
 
     /// The labelled elements, left to right, dropping any whose position is
