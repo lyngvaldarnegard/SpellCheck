@@ -184,8 +184,10 @@ struct SettingsView: View {
                     }
                 }
             }
-            .frame(minHeight: CGFloat(stats.count) * 44)
-            Text("Box = Q1–Q3 · line = median · whiskers = min–max · blue dot = IQM. Seconds per 100 tokens (4 characters per token), from your own requests; ranked fastest first. Nothing is sent anywhere.")
+            // Explicit height (GeometryReader inside a Form otherwise
+            // collapses and the legend below overlaps the last row).
+            .frame(height: CGFloat(stats.count) * 64 + 4)
+            Text("Box = Q1–Q3 · line = median · whiskers = min–max · red dot = IQM. Seconds per 100 tokens (4 characters per token), from your own requests; ranked fastest first. Nothing is sent anywhere.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
@@ -346,43 +348,44 @@ private struct BoxPlot: View {
                 p.addLine(to: CGPoint(x: median, y: boxTop + boxHeight))
             }
             .stroke(Color.primary, lineWidth: 1.5)
-            // IQM marker: blue so it contrasts with the green box and
+            // IQM marker: RED so it contrasts with the green box and
             // median details, ringed so it never disappears inside the box;
-            // its value is printed next to it in the same blue.
+            // its value is printed next to it in the same red.
             Circle()
-                .fill(Color.blue)
+                .fill(Color.red)
                 .frame(width: 8, height: 8)
                 .overlay(Circle().stroke(Color.primary.opacity(0.6), lineWidth: 1))
                 .offset(x: iqm - 4, y: midY - 4)
             Text(Self.value(stat.interQuartileMeanSeconds))
                 .font(.system(size: 9))
-                .foregroundStyle(Color.blue)
+                .foregroundStyle(Color.red)
                 .offset(x: iqm + 6, y: 0)
             // Numeric labels for min, Q1, median, Q3 and max under the
-            // plot; labels too close to an already-drawn one are skipped so
-            // the numbers stay readable.
+            // plot. ALL five are always drawn: labels that would collide
+            // are staggered onto a second line instead of being skipped.
             ForEach(Self.labelledPositions(lowX: lowX, q1: q1, median: median, q3: q3, highX: highX,
                                            stat: stat), id: \.position) { item in
                 Text(item.text)
                     .font(.system(size: 9))
                     .foregroundStyle(.secondary)
-                    .offset(x: item.position, y: boxTop + boxHeight + 4)
+                    .offset(x: item.position, y: boxTop + boxHeight + 4 + CGFloat(item.line) * 11)
             }
         }
-        .frame(width: width, height: boxTop + boxHeight + 20)
+        .frame(width: width, height: boxTop + boxHeight + 30)
     }
 
     private static func value(_ seconds: Double) -> String {
         String(format: "%.1fs", seconds)
     }
 
-    /// The labelled elements, left to right, dropping any whose position is
-    /// within ~26 pt of the previous kept label (values that coincide would
-    /// print on top of each other).
+    /// All five labelled elements (min, Q1, median, Q3, max), left to
+    /// right. Each label goes on the first of two staggered lines where it
+    /// does not collide with the previous label on that line, so Q1 and Q3
+    /// are never dropped — close values simply alternate lines.
     private static func labelledPositions(
         lowX: CGFloat, q1: CGFloat, median: CGFloat, q3: CGFloat, highX: CGFloat,
         stat: ResponseTimeEstimator.ModelStatistics
-    ) -> [(position: CGFloat, text: String)] {
+    ) -> [(position: CGFloat, text: String, line: Int)] {
         let all: [(CGFloat, Double)] = [
             (lowX, stat.minimumSeconds),
             (q1, stat.firstQuartileSeconds),
@@ -390,10 +393,16 @@ private struct BoxPlot: View {
             (q3, stat.thirdQuartileSeconds),
             (highX, stat.maximumSeconds),
         ]
-        var kept: [(position: CGFloat, text: String)] = []
+        var lineEnds: [CGFloat] = [-.greatestFiniteMagnitude, -.greatestFiniteMagnitude]
+        var kept: [(position: CGFloat, text: String, line: Int)] = []
         for (position, seconds) in all.sorted(by: { $0.0 < $1.0 }) {
-            if let last = kept.last, position - last.position < 26 { continue }
-            kept.append((position, value(seconds)))
+            var line = 0
+            while line < lineEnds.count && position - lineEnds[line] < 26 {
+                line += 1
+            }
+            if line >= lineEnds.count { line = lineEnds.count - 1 }
+            lineEnds[line] = position
+            kept.append((position, value(seconds), line))
         }
         return kept
     }
