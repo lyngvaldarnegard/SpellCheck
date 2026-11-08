@@ -24,8 +24,10 @@ public final class ResponseTimeEstimator: @unchecked Sendable {
         var models: [String: [Sample]] = [:]
     }
 
-    /// Most recent samples kept per model.
-    private static let maxSamplesPerModel = 20
+    /// Most recent samples kept per model (rolling window: when a model
+    /// passes this count, the oldest samples are dropped — keeps the data
+    /// fresh while giving the quartiles a big enough pool).
+    private static let maxSamplesPerModel = 100
 
     /// Learned response-time statistics for one model, shown in Settings.
     /// All times are normalized to seconds per 100 tokens (the standard
@@ -38,6 +40,8 @@ public final class ResponseTimeEstimator: @unchecked Sendable {
         public let interQuartileMeanSeconds: Double
         public let firstQuartileSeconds: Double
         public let thirdQuartileSeconds: Double
+        public let minimumSeconds: Double
+        public let maximumSeconds: Double
     }
 
     private let lock = NSLock()
@@ -99,11 +103,12 @@ public final class ResponseTimeEstimator: @unchecked Sendable {
         return rate * Double(max(inputLength, 1))
     }
 
-    /// Learned statistics for every tracked model, sorted by model name.
+    /// Learned statistics for every tracked model, ranked by inter-quartile
+    /// mean (fastest first) so the list reads as a speed ranking.
     public func statistics() -> [ModelStatistics] {
         lock.lock()
         defer { lock.unlock() }
-        return store.models.keys.sorted().map { model in
+        let all = store.models.keys.map { model -> ModelStatistics in
             // seconds per 100 tokens: length chars ≈ length/4 tokens,
             // so per 100 tokens = seconds * 100 / (length/4) = seconds * 400 / length.
             let rates = (store.models[model] ?? [])
@@ -116,8 +121,16 @@ public final class ResponseTimeEstimator: @unchecked Sendable {
                 medianSeconds: rates.isEmpty ? 0 : Self.median(of: rates),
                 interQuartileMeanSeconds: rates.isEmpty ? 0 : Self.mean(of: kept),
                 firstQuartileSeconds: rates.isEmpty ? 0 : Self.firstQuartile(of: rates),
-                thirdQuartileSeconds: rates.isEmpty ? 0 : Self.thirdQuartile(of: rates)
+                thirdQuartileSeconds: rates.isEmpty ? 0 : Self.thirdQuartile(of: rates),
+                minimumSeconds: rates.first ?? 0,
+                maximumSeconds: rates.last ?? 0
             )
+        }
+        return all.sorted {
+            if $0.interQuartileMeanSeconds != $1.interQuartileMeanSeconds {
+                return $0.interQuartileMeanSeconds < $1.interQuartileMeanSeconds
+            }
+            return $0.model < $1.model
         }
     }
 

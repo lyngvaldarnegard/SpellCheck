@@ -405,11 +405,15 @@ struct ResponseTimeEstimatorTests {
         for seconds in [1.0, 2.0, 2.0, 2.0, 2.0, 3.0, 3.0, 50.0] {
             estimator.record(model: "m", inputLength: 1000, seconds: seconds)
         }
-        estimator.record(model: "other", inputLength: 2000, seconds: 4) // 1.6 s/100tok
+        estimator.record(model: "other", inputLength: 2000, seconds: 4) // 0.8 s/100tok
         let stats = estimator.statistics()
         #expect(stats.count == 2)
-        #expect(stats.map(\.model) == ["m", "other"])
+        // Ranked by IQM, fastest first: other (0.8) before m (0.9).
+        #expect(stats.map(\.model) == ["other", "m"])
+        // Whisker endpoints: min = fastest observed rate, max = slowest.
         let m = stats.first { $0.model == "m" }!
+        #expect(abs(m.minimumSeconds - 0.4) < 0.001)
+        #expect(abs(m.maximumSeconds - 20.0) < 0.001)
         #expect(m.sampleCount == 8)
         // Median sample 2.0 s -> 0.8 s per 100 tokens.
         #expect(abs(m.medianSeconds - 0.8) < 0.001)

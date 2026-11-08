@@ -150,8 +150,9 @@ struct SettingsView: View {
         }
     }
 
-    /// Learned per-model response times (they drive the progress ring's
-    /// speed). All values are seconds per 100 tokens (4 chars/token).
+    /// Learned per-model response times, ranked by IQM (fastest first) with
+    /// a shared-axis box plot per model (issue #18). All values are seconds
+    /// per 100 tokens (4 chars/token).
     @ViewBuilder
     private var responseTimes: some View {
         let stats = controller.responseTimeStats?() ?? []
@@ -160,21 +161,31 @@ struct SettingsView: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         } else {
-            ForEach(stats, id: \.model) { stat in
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack {
-                        Text(stat.model).font(.body.weight(.semibold))
-                        Spacer()
-                        Text("\(stat.sampleCount) samples")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
+            // All rows share one horizontal seconds axis: the same seconds
+            // value sits at the same horizontal position in every row.
+            let axisMax = max(stats.map(\.maximumSeconds).max() ?? 1, 0.1)
+            GeometryReader { geo in
+                let plotWidth = max(120, geo.size.width - 250)
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(stats, id: \.model) { stat in
+                        HStack(alignment: .center, spacing: 8) {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(stat.model)
+                                    .font(.body.weight(.semibold))
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                Text("\(stat.sampleCount) samples · IQM \(stat.interQuartileMeanSeconds, format: .number.precision(.fractionLength(1))) s")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .frame(width: 226, alignment: .leading)
+                            BoxPlot(stat: stat, axisMax: axisMax, width: plotWidth)
+                        }
                     }
-                    Text("Median \(stat.medianSeconds, format: .number.precision(.fractionLength(1))) s · IQM \(stat.interQuartileMeanSeconds, format: .number.precision(.fractionLength(1))) s · IQR \(stat.firstQuartileSeconds, format: .number.precision(.fractionLength(1)))–\(stat.thirdQuartileSeconds, format: .number.precision(.fractionLength(1))) s")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
                 }
             }
-            Text("Seconds per 100 tokens (estimated at 4 characters per token), from your own requests. These drive the progress ring's speed; nothing is sent anywhere.")
+            .frame(minHeight: CGFloat(stats.count) * 44)
+            Text("Box = Q1–Q3 · line = median · whiskers = min–max · ● = IQM. Seconds per 100 tokens (4 characters per token), from your own requests; ranked fastest first. Nothing is sent anywhere.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
@@ -289,6 +300,57 @@ private struct ModelPickerField: View {
                 }
             }
         }
+    }
+}
+
+/// One horizontal box plot on a shared seconds axis: whiskers span the
+/// observed min–max, the box spans Q1–Q3, the line is the median and the
+/// dot marks the inter-quartile mean (the number the ranking and the
+/// progress ring use).
+private struct BoxPlot: View {
+    let stat: ResponseTimeEstimator.ModelStatistics
+    let axisMax: Double
+    let width: CGFloat
+
+    private func x(_ seconds: Double) -> CGFloat {
+        CGFloat(min(max(seconds / axisMax, 0), 1)) * width
+    }
+
+    var body: some View {
+        let boxTop: CGFloat = 9
+        let boxHeight: CGFloat = 14
+        let midY = boxTop + boxHeight / 2
+        let min = x(stat.minimumSeconds)
+        let q1 = x(stat.firstQuartileSeconds)
+        let median = x(stat.medianSeconds)
+        let q3 = x(stat.thirdQuartileSeconds)
+        let max = x(stat.maximumSeconds)
+        let iqm = x(stat.interQuartileMeanSeconds)
+        ZStack(alignment: .topLeading) {
+            // Whisker: observed min to observed max.
+            Path { p in
+                p.move(to: CGPoint(x: min, y: midY))
+                p.addLine(to: CGPoint(x: max, y: midY))
+            }
+            .stroke(NSColor.separatorColor, lineWidth: 1)
+            // Box: Q1 to Q3.
+            RoundedRectangle(cornerRadius: 2)
+                .fill(Color.green.opacity(0.25))
+                .frame(width: max(q3 - q1, 2), height: boxHeight)
+                .offset(x: q1, y: boxTop)
+            // Median line.
+            Path { p in
+                p.move(to: CGPoint(x: median, y: boxTop))
+                p.addLine(to: CGPoint(x: median, y: boxTop + boxHeight))
+            }
+            .stroke(Color.primary, lineWidth: 1.5)
+            // IQM marker.
+            Circle()
+                .fill(Color.green)
+                .frame(width: 6, height: 6)
+                .offset(x: iqm - 3, y: midY - 3)
+        }
+        .frame(width: width, height: boxTop + boxHeight + 6)
     }
 }
 
