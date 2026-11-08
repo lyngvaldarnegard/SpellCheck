@@ -162,8 +162,12 @@ struct SettingsView: View {
                 .foregroundStyle(.secondary)
         } else {
             // All rows share one horizontal seconds axis: the same seconds
-            // value sits at the same horizontal position in every row.
-            let axisMax = max(stats.map(\.maximumSeconds).max() ?? 1, 0.1)
+            // value sits at the same horizontal position in every row. The
+            // axis spans only Q1–Q3 (per user decision): the observed
+            // min/max extremes are NOT drawn — one slow outlier would
+            // otherwise stretch the axis and waste half the plot.
+            let axisMin = stats.map(\.firstQuartileSeconds).min() ?? 0
+            let axisMax = max(stats.map(\.thirdQuartileSeconds).max() ?? 1, axisMin + 0.1)
             GeometryReader { geo in
                 let plotWidth = max(120, geo.size.width - 250)
                 VStack(alignment: .leading, spacing: 10) {
@@ -179,7 +183,7 @@ struct SettingsView: View {
                                     .foregroundStyle(.secondary)
                             }
                             .frame(width: 226, alignment: .leading)
-                            BoxPlot(stat: stat, axisMax: axisMax, width: plotWidth)
+                            BoxPlot(stat: stat, axisMin: axisMin, axisMax: axisMax, width: plotWidth)
                         }
                     }
                 }
@@ -187,7 +191,7 @@ struct SettingsView: View {
             // Explicit height (GeometryReader inside a Form otherwise
             // collapses and the legend below overlaps the last row).
             .frame(height: CGFloat(stats.count) * 64 + 4)
-            Text("Box = Q1–Q3 · line = median · whiskers = min–max · red dot = IQM. Seconds per 100 tokens (4 characters per token), from your own requests; ranked fastest first. Nothing is sent anywhere.")
+            Text("Box = Q1–Q3 · line = median · red dot = IQM. Axis spans Q1–Q3 across all models; extremes are not drawn. Seconds per 100 tokens (4 characters per token), from your own requests; ranked fastest first. Nothing is sent anywhere.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
@@ -311,33 +315,27 @@ private struct ModelPickerField: View {
 /// progress ring use).
 private struct BoxPlot: View {
     let stat: ResponseTimeEstimator.ModelStatistics
+    let axisMin: Double
     let axisMax: Double
     let width: CGFloat
 
+    /// Maps seconds onto the shared Q1–Q3 axis, clamped to the axis ends.
     private func x(_ seconds: Double) -> CGFloat {
-        CGFloat(min(max(seconds / axisMax, 0), 1)) * width
+        let clamped = min(max(seconds, axisMin), axisMax)
+        return CGFloat((clamped - axisMin) / max(axisMax - axisMin, 0.001)) * width
     }
 
     var body: some View {
         let boxTop: CGFloat = 9
         let boxHeight: CGFloat = 14
         let midY = boxTop + boxHeight / 2
-        // Named lowX/highX (not min/max) so Swift's max()/min() functions
-        // are not shadowed in this scope.
-        let lowX = x(stat.minimumSeconds)
         let q1 = x(stat.firstQuartileSeconds)
         let median = x(stat.medianSeconds)
         let q3 = x(stat.thirdQuartileSeconds)
-        let highX = x(stat.maximumSeconds)
         let iqm = x(stat.interQuartileMeanSeconds)
         ZStack(alignment: .topLeading) {
-            // Whisker: observed min to observed max.
-            Path { p in
-                p.move(to: CGPoint(x: lowX, y: midY))
-                p.addLine(to: CGPoint(x: highX, y: midY))
-            }
-            .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
-            // Box: Q1 to Q3.
+            // Box: Q1 to Q3 (whiskers/min–max are deliberately not drawn
+            // — one slow outlier would stretch the whole axis).
             RoundedRectangle(cornerRadius: 2)
                 .fill(Color.green.opacity(0.25))
                 .frame(width: max(q3 - q1, 2), height: boxHeight)
@@ -360,10 +358,9 @@ private struct BoxPlot: View {
                 .font(.system(size: 9))
                 .foregroundStyle(Color.red)
                 .offset(x: iqm + 6, y: 0)
-            // Numeric labels for min, Q1, median, Q3 and max under the
-            // plot. ALL five are always drawn: labels that would collide
-            // are staggered onto a second line instead of being skipped.
-            ForEach(Self.labelledPositions(lowX: lowX, q1: q1, median: median, q3: q3, highX: highX,
+            // Numeric labels for Q1, median and Q3 under the plot.
+            // Labels that would collide are staggered onto a second line.
+            ForEach(Self.labelledPositions(q1: q1, median: median, q3: q3,
                                            stat: stat), id: \.position) { item in
                 Text(item.text)
                     .font(.system(size: 9))
@@ -378,20 +375,18 @@ private struct BoxPlot: View {
         String(format: "%.1fs", seconds)
     }
 
-    /// All five labelled elements (min, Q1, median, Q3, max), left to
-    /// right. Each label goes on the first of two staggered lines where it
-    /// does not collide with the previous label on that line, so Q1 and Q3
-    /// are never dropped — close values simply alternate lines.
+    /// The labelled elements (Q1, median, Q3), left to right. Each label
+    /// goes on the first of two staggered lines where it does not collide
+    /// with the previous label on that line — close values simply
+    /// alternate lines, so all three are always drawn.
     private static func labelledPositions(
-        lowX: CGFloat, q1: CGFloat, median: CGFloat, q3: CGFloat, highX: CGFloat,
+        q1: CGFloat, median: CGFloat, q3: CGFloat,
         stat: ResponseTimeEstimator.ModelStatistics
     ) -> [(position: CGFloat, text: String, line: Int)] {
         let all: [(CGFloat, Double)] = [
-            (lowX, stat.minimumSeconds),
             (q1, stat.firstQuartileSeconds),
             (median, stat.medianSeconds),
             (q3, stat.thirdQuartileSeconds),
-            (highX, stat.maximumSeconds),
         ]
         var lineEnds: [CGFloat] = [-.greatestFiniteMagnitude, -.greatestFiniteMagnitude]
         var kept: [(position: CGFloat, text: String, line: Int)] = []
