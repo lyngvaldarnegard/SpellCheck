@@ -320,17 +320,19 @@ private struct BoxPlot: View {
         let boxTop: CGFloat = 9
         let boxHeight: CGFloat = 14
         let midY = boxTop + boxHeight / 2
-        let min = x(stat.minimumSeconds)
+        // Named lowX/highX (not min/max) so Swift's max()/min() functions
+        // are not shadowed in this scope.
+        let lowX = x(stat.minimumSeconds)
         let q1 = x(stat.firstQuartileSeconds)
         let median = x(stat.medianSeconds)
         let q3 = x(stat.thirdQuartileSeconds)
-        let max = x(stat.maximumSeconds)
+        let highX = x(stat.maximumSeconds)
         let iqm = x(stat.interQuartileMeanSeconds)
         ZStack(alignment: .topLeading) {
             // Whisker: observed min to observed max.
             Path { p in
-                p.move(to: CGPoint(x: min, y: midY))
-                p.addLine(to: CGPoint(x: max, y: midY))
+                p.move(to: CGPoint(x: lowX, y: midY))
+                p.addLine(to: CGPoint(x: highX, y: midY))
             }
             .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
             // Box: Q1 to Q3.
