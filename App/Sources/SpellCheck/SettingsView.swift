@@ -346,13 +346,55 @@ private struct BoxPlot: View {
                 p.addLine(to: CGPoint(x: median, y: boxTop + boxHeight))
             }
             .stroke(Color.primary, lineWidth: 1.5)
-            // IQM marker.
+            // IQM marker: prominent, white-ringed so it never disappears
+            // inside the box, with its value printed above it.
             Circle()
                 .fill(Color.green)
-                .frame(width: 6, height: 6)
-                .offset(x: iqm - 3, y: midY - 3)
+                .frame(width: 8, height: 8)
+                .overlay(Circle().stroke(Color.primary.opacity(0.6), lineWidth: 1))
+                .offset(x: iqm - 4, y: midY - 4)
+            Text(Self.value(stat.interQuartileMeanSeconds))
+                .font(.system(size: 9))
+                .foregroundStyle(Color.green)
+                .offset(x: iqm + 6, y: 0)
+            // Numeric labels for min, Q1, median, Q3 and max under the
+            // plot; labels too close to an already-drawn one are skipped so
+            // the numbers stay readable.
+            ForEach(Self.labelledPositions(lowX: lowX, q1: q1, median: median, q3: q3, highX: highX,
+                                           stat: stat), id: \.position) { item in
+                Text(item.text)
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
+                    .offset(x: item.position, y: boxTop + boxHeight + 4)
+            }
         }
-        .frame(width: width, height: boxTop + boxHeight + 6)
+        .frame(width: width, height: boxTop + boxHeight + 20)
+    }
+
+    private static func value(_ seconds: Double) -> String {
+        "\(seconds, format: .number.precision(.fractionLength(1)))s"
+    }
+
+    /// The labelled elements, left to right, dropping any whose position is
+    /// within ~26 pt of the previous kept label (values that coincide would
+    /// print on top of each other).
+    private static func labelledPositions(
+        lowX: CGFloat, q1: CGFloat, median: CGFloat, q3: CGFloat, highX: CGFloat,
+        stat: ResponseTimeEstimator.ModelStatistics
+    ) -> [(position: CGFloat, text: String)] {
+        let all: [(CGFloat, Double)] = [
+            (lowX, stat.minimumSeconds),
+            (q1, stat.firstQuartileSeconds),
+            (median, stat.medianSeconds),
+            (q3, stat.thirdQuartileSeconds),
+            (highX, stat.maximumSeconds),
+        ]
+        var kept: [(position: CGFloat, text: String)] = []
+        for (position, seconds) in all.sorted(by: { $0.0 < $1.0 }) {
+            if let last = kept.last, position - last.position < 26 { continue }
+            kept.append((position, value(seconds)))
+        }
+        return kept
     }
 }
 
