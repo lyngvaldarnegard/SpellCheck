@@ -42,6 +42,8 @@ private struct CapturedTarget {
 ///      empty),
 ///   4. a clipboard fallback (posts ⌘C, reads the selection, restores the
 ///      previous clipboard) for editors that expose no usable AX text at all.
+///      This layer always runs, even when the searches above have spent the
+///      whole grab budget on a large web tree.
 ///
 /// Replacement is clipboard-based (FixKey-style): the corrected text is placed
 /// on the pasteboard and pasted over the still-intact selection with ⌘V, so
@@ -141,7 +143,12 @@ final class AccessibilityTextSource: TextSource, @unchecked Sendable {
 
         // Layer 4: clipboard fallback — the selection is copied with ⌘C and
         // the replacement is pasted over the (still intact) selection.
-        if Date() < deadline, let copied = try await copySelectionViaClipboard(pid: pid, appName: appName) {
+        // Unconditional and outside the grab deadline: the AX searches above
+        // can spend the whole 3 s budget walking a large web tree (Safari,
+        // Chromium) without finding an editor element, and this layer — the
+        // only one that works on browser selections — must still get its
+        // chance to capture the text.
+        if let copied = try await copySelectionViaClipboard(pid: pid, appName: appName) {
             axLog.info("grab: clipboard fallback layer (pid \(pid))")
             let target = CapturedTarget(pid: pid, appName: appName, element: focused, originalText: copied)
             nonisolated(unsafe) let captured = target
@@ -224,9 +231,21 @@ final class AccessibilityTextSource: TextSource, @unchecked Sendable {
         let saved = snapshotPasteboard()
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
+        // Our own clearContents bumps the change count; the target app's ⌘C
+        // bumps it again. Poll for that second bump instead of a single read
+        // after a fixed 250 ms sleep: a slow app can service ⌘C after that
+        // read, making the selection look empty and the grab wrongly report
+        // "No text found".
+        let clearedCount = pasteboard.changeCount
         postKeyboardShortcut(modifiers: .maskCommand, virtualKey: 0x08 /* C */)
-        try await Task.sleep(nanoseconds: 250_000_000)
-        let copied = pasteboard.string(forType: .string)
+        var copied: String?
+        for _ in 0..<12 { // up to ~600 ms for the target app to service ⌘C
+            try await Task.sleep(nanoseconds: 50_000_000)
+            if pasteboard.changeCount != clearedCount {
+                copied = pasteboard.string(forType: .string)
+                break
+            }
+        }
         restorePasteboard(saved)
         guard let copied, !copied.isEmpty else { return nil }
         return copied
