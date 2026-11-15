@@ -6,6 +6,27 @@ Sigurd's macOS menu-bar app that corrects text in any app: select text (or place
 
 The app was built by a different chat (Vibe Nuage Agent). The Vibe chat's job: hold the standing context and build the next-phase prompt with the prompt-bygger skill.
 
+## Status (15.11.2026 — false "No text found" fixed, v1.1.8 pending tag)
+
+- **Bug reported by Sigurd (screenshot): Safari with blue-selected text showed
+  "No text found".** Root cause: the clipboard fallback (layer 4 of
+  `AccessibilityTextSource.grab()`, the only layer that works on browser
+  selections) was gated on the same 3 s grab deadline as the AX searches
+  (layers 1–3). On large web trees the searches spend the whole budget, layer
+  4 is skipped, the grab throws `noText`. Secondary: the ⌘C read was a
+  single pasteboard read after a fixed 250 ms sleep, racing slow apps' copy.
+- **Fix on main (commit `9618e6f`, issue #19):** layer 4 now runs
+  unconditionally outside the deadline; the ⌘C grab polls the pasteboard
+  change count (50 ms steps, up to ~600 ms). Release notes
+  `scripts/release-notes/v1.1.8.md` added. **v1.1.8 not tagged yet** — the
+  release needs `git tag v1.1.8 main && git push origin v1.1.8` (or Actions →
+  Release → Run workflow with version v1.1.8). Awaits Sigurd's real-Mac
+  confirmation. Known limitation unchanged: caret-only (nothing selected) in
+  browser editors still cannot be captured when the editor exposes no
+  kAXValue.
+- The Personal Knowledge topic "spellcheck-app" was stale at v0.1.4-era
+  status; refreshed 15.11.2026.
+
 ## Status (07.11.2026 — v1.0.0 shipped)
 
 - **v1.0.0 is live** (tag v1.0.0; CI + Release green). Everything from the
