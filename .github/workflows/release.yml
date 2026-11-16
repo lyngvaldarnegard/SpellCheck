@@ -22,11 +22,12 @@ permissions:
 jobs:
   build:
     name: Build, package and publish
-    # Runner starvation on 16.11: GitHub cancelled queued jobs after ~15 min
-    # on all macOS pools, so attempts are spread across pools in parallel;
-    # build-app.sh still produces a universal arm64+x86_64 binary either way.
-    # This attempt: macos-15-intel (x64) shot.
-    runs-on: macos-15-intel
+    # Single patient attempt on the proven pool (macos-15, the one used by every
+    # release up to v1.1.7). Earlier retries pushed a new commit to this branch
+    # every ~15-20 min; each push supersedes and cancels the previous queued
+    # run, so no attempt was ever left in the queue long enough to get a
+    # runner. build-app.sh produces a universal arm64+x86_64 binary regardless.
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
 
