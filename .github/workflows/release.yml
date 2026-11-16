@@ -25,8 +25,8 @@ jobs:
     # Runner starvation on 16.11: GitHub cancelled queued jobs after ~15 min
     # on all macOS pools, so attempts are spread across pools in parallel;
     # build-app.sh still produces a universal arm64+x86_64 binary either way.
-    # This attempt: macos-13 (intel) shot.
-    runs-on: macos-13
+    # This attempt: macos-15 (arm64) shot.
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
 
