@@ -22,11 +22,10 @@ permissions:
 jobs:
   build:
     name: Build, package and publish
-    # Single patient attempt on the proven pool (macos-15, the one used by every
-    # release up to v1.1.7). Earlier retries pushed a new commit to this branch
-    # every ~15-20 min; each push supersedes and cancels the previous queued
-    # run, so no attempt was ever left in the queue long enough to get a
-    # runner. build-app.sh produces a universal arm64+x86_64 binary regardless.
+    # Patient attempt on the proven pool (macos-15, the one used by every
+    # release up to v1.1.7). Re-triggered 16.11 18:26 UTC after a long queue
+    # with no runner assigned; earlier retries churned pools without a build.
+    # build-app.sh produces a universal arm64+x86_64 binary regardless.
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
