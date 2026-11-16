@@ -22,12 +22,11 @@ permissions:
 jobs:
   build:
     name: Build, package and publish
-    # macos-15 (arm64) pool failed to provide a runner (GitHub capacity
-    # crunch: "not acquired by Runner of type hosted even after multiple
-    # attempts", 15-min queue cancels on 16.11). The Intel (x64) pool of
-    # the same macOS 15 image has capacity; build-app.sh still produces a
-    # universal arm64+x86_64 binary either way.
-    runs-on: macos-15-intel
+    # Runner starvation on 16.11: GitHub cancelled queued jobs after ~15 min
+    # on all macOS pools, so attempts are spread across pools in parallel;
+    # build-app.sh still produces a universal arm64+x86_64 binary either way.
+    # This attempt: macos-14 (arm64) pool.
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
 
