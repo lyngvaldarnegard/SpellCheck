@@ -10,7 +10,7 @@ jobs:
     name: Core tests
     strategy:
       matrix:
-        os: [ubuntu-24.04, macos-15]
+        os: [ubuntu-24.04, macos-15-intel]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -24,7 +24,7 @@ jobs:
     name: Engine tests
     strategy:
       matrix:
-        os: [ubuntu-24.04, macos-15]
+        os: [ubuntu-24.04, macos-15-intel]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -36,7 +36,8 @@ jobs:
 
   app-build:
     name: App build (macOS)
-    runs-on: macos-15
+    # same arm64 capacity crunch as release.yml - use the Intel pool
+    runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@v4
       - uses: swift-actions/setup-swift@v2
