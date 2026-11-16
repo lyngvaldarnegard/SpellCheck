@@ -2,6 +2,11 @@ name: Release
 
 on:
   push:
+    branches:
+      # A release can also be cut by pushing a branch named exactly like
+      # the version (e.g. refs/heads/v1.2.0) - the path used by automation
+      # that can create branches but not tags.
+      - "v*.*.*"
     tags:
       - "v*.*.*"
   workflow_dispatch:
