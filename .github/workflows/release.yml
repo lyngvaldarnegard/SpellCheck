@@ -22,11 +22,12 @@ permissions:
 jobs:
   build:
     name: Build, package and publish
-    # Patient attempt on the proven pool (macos-15, the one used by every
-    # release up to v1.1.7). Re-triggered 16.11 18:26 UTC after a long queue
-    # with no runner assigned; earlier retries churned pools without a build.
-    # build-app.sh produces a universal arm64+x86_64 binary regardless.
-    runs-on: macos-15
+    # 16.11: the macos-15 (arm64) pool is starved today ("capacity constraints" -
+    # every arm64 job was cancelled after 15 min without a runner), while the
+    # macos-15-intel pool provided a runner that built the entire app
+    # successfully. build-app.sh compiles a universal arm64+x86_64 binary, so
+    # the shipped zip runs natively on Apple Silicon regardless of this label.
+    runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@v4
 
@@ -122,16 +123,6 @@ jobs:
           fi
           xmllint --noout appcast.xml
 
-      - name: Commit appcast.xml to main
-        env:
-          RELEASE_VERSION: ${{ github.event.inputs.version || github.ref_name }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add appcast.xml
-          git commit -m "Update appcast for $RELEASE_VERSION" || echo "no appcast changes"
-          git push origin HEAD:main
-
       - name: Prepare user-facing release notes
         env:
           RELEASE_VERSION: ${{ github.event.inputs.version || github.ref_name }}
@@ -152,3 +143,15 @@ jobs:
             build/SpellCheck-macOS.zip
             appcast.xml
           body_path: /tmp/release-notes.md
+
+      - name: Commit appcast.xml to main (best-effort - the release is already published)
+        env:
+          RELEASE_VERSION: ${{ github.event.inputs.version || github.ref_name }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add appcast.xml
+          git commit -m "Update appcast for $RELEASE_VERSION" || echo "no appcast changes"
+          git push origin HEAD:main || echo "WARNING: appcast push to main failed - the release is published; appcast must be committed separately"
+
+
