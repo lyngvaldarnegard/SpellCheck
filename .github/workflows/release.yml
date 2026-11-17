@@ -22,7 +22,7 @@ permissions:
 jobs:
   build:
     name: Build, package and publish
-    # 2026-11-17 17:30 UTC: the macos-15 (arm64) pool is starved today ("capacity constraints" -
+    # 2026-11-17 19:30 UTC: the macos-15 (arm64) pool is starved today ("capacity constraints" -
     # every arm64 job was cancelled after 15 min without a runner), while the
     # macos-15-intel pool provided a runner that built the entire app
     # successfully. build-app.sh compiles a universal arm64+x86_64 binary, so
