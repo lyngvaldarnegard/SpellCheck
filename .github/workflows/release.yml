@@ -22,7 +22,7 @@ permissions:
 jobs:
   build:
     name: Build, package and publish
-    # 2026-11-17: the macos-15 (arm64) pool is starved today ("capacity constraints" -
+    # 2026-11-17 01:45 UTC: the macos-15 (arm64) pool is starved today ("capacity constraints" -
     # every arm64 job was cancelled after 15 min without a runner), while the
     # macos-15-intel pool provided a runner that built the entire app
     # successfully. build-app.sh compiles a universal arm64+x86_64 binary, so
@@ -153,5 +153,3 @@ jobs:
           git add appcast.xml
           git commit -m "Update appcast for $RELEASE_VERSION" || echo "no appcast changes"
           git push origin HEAD:main || echo "WARNING: appcast push to main failed - the release is published; appcast must be committed separately"
-
-
