@@ -345,7 +345,10 @@ final class AccessibilityTextSource: TextSource, @unchecked Sendable {
             return false
         }
         bounded(focused)
-        return AXUIElementPerformAction(focused, kAXCopyAction as CFString) == .success
+        // "Copy" is the raw Accessibility action name that the SDK constant
+        // resolves to; the literal keeps the build independent of that
+        // constant's header availability.
+        return AXUIElementPerformAction(focused, "Copy" as CFString) == .success
     }
 
     // MARK: Replacement
