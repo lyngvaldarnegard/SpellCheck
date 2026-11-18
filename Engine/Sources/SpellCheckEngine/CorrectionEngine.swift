@@ -139,8 +139,11 @@ public actor CorrectionEngine {
         }
         if let sourceError = error as? TextSourceError {
             switch sourceError {
-            case .noText:
-                return "No text found — select some text or place the caret inside a sentence"
+            case .noText(let diagnostic):
+                if diagnostic.isEmpty {
+                    return "No text found — select some text"
+                }
+                return "No text found — select some text — " + diagnostic
             case .accessDenied:
                 return "SpellCheck needs Accessibility permission (System Settings → Privacy & Security → Accessibility)"
             case .replaceFailed:

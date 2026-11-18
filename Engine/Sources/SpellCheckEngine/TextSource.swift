@@ -20,14 +20,19 @@ public struct GrabbedText: Sendable {
     }
 }
 
-/// Anything that can capture the text the user wants edited (selection or
-/// current sentence) from the frontmost application.
+/// Anything that can capture the user's selected text from the frontmost
+/// application. SpellCheck works on selected text only (the former
+/// caret-sentence mode was removed by explicit user decision).
 public protocol TextSource: Sendable {
     func grab() async throws -> GrabbedText
 }
 
 public enum TextSourceError: Error, Sendable, Equatable {
-    case noText
+    /// Nothing usable was grabbed. The payload is a compact one-line
+    /// diagnostic trace (app, pid, which capture/copy measures ran and
+    /// failed), shown with the failure alert so a broken-grab report needs
+    /// nothing but the alert text itself. Empty when no trace is available.
+    case noText(String)
     case accessDenied
     /// The replacement could not be issued at all — nothing was written to
     /// the target document.
