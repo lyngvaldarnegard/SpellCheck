@@ -7,10 +7,10 @@
     <language>en</language>
     <item>
       <title>Version 1.1.8</title>
-      <pubDate>Wed, 18 Nov 2026 06:13:24 +0000</pubDate>
+      <pubDate>Wed, 18 Nov 2026 06:22:53 +0000</pubDate>
       <sparkle:shortVersionString>1.1.8</sparkle:shortVersionString>
       <sparkle:version>1.1.8</sparkle:version>
-      <enclosure url="https://github.com/lyngvaldarnegard/SpellCheck/releases/download/v1.1.8/SpellCheck-macOS.zip" sparkle:edSignature="4Oe7cjzUU8YA1G1/7sfRIuzzw8mlJPUTFc7RathyOVzqf0r7rXBrX3SGgGHeHV1dgJgnQk69l+1R4O4zZ3nXBg==" length="1967300" type="application/octet-stream"/>
+      <enclosure url="https://github.com/lyngvaldarnegard/SpellCheck/releases/download/v1.1.8/SpellCheck-macOS.zip" sparkle:edSignature="NMN5oAq0gCumRVEIFKaoeytvLIU8Fe6cS53InLZQtFtBqsFAw07iM54xfS+aZPgJ6kHBfVB308v56ra0VdwSAQ==" length="1967300" type="application/octet-stream"/>
     </item>
   </channel>
 </rss>
