@@ -2,9 +2,53 @@
 
 # SpellCheck app — Vibe context
 
-Sigurd's macOS menu-bar app that corrects text in any app: select text (or place the caret in a sentence), press the global hot key, review the correction, and it is typed back over the original. A standalone AI text-editing app, built in Swift. Repo: **lyngvaldarnegard/SpellCheck** (private, branch `main`). Old scaffold branch `vibe/spellcheck-scaffold-6a9537` is stale — main is the source of truth.
+Sigurd's macOS menu-bar app that corrects text in any app: select text (or place the caret in a sentence), press the global hot key, review the correction, and it is typed back over the original. A standalone AI text-editing app, built in Swift. Repo: **lyngvaldarnegard/SpellCheck** (public, branch `main`). Old scaffold branch `vibe/spellcheck-scaffold-6a9537` is stale — main is the source of truth.
 
 The app was built by a different chat (Vibe Nuage Agent). The Vibe chat's job: hold the standing context and build the next-phase prompt with the prompt-bygger skill.
+
+## Status (18.11.2026 — v1.1.9 shipped; the >24 h v1.1.8 release blockage root-caused and fixed)
+
+Two independent release-CI bugs had blocked v1.1.8 for over 24 hours
+(multiple failed retries 16–18.11). Both are fixed on main and verified by
+the green v1.1.8 and v1.1.9 branch-cut releases. Nothing below is
+speculation — every point was observed on live runs.
+
+- **Bug 1 — appcast push rejected.** "Commit appcast.xml to main" pushed the
+  release branch tip (`git push origin HEAD:main`). The `v1.1.8` branch
+  carried 33 commits main lacked, including `.github/workflows/release.yml`
+  edits — and the workflow's `GITHUB_TOKEN` (`contents: write` only) may NOT
+  push workflow-file changes, so GitHub rejected the whole push and the run
+  died right before the release. **Fix** (`f2b6873`): the step builds a
+  plumbing commit on top of the current `origin/main`
+  (`git fetch origin main` → `read-tree` → `update-index --cacheinfo` →
+  `write-tree` → `commit-tree`) whose tree is main + appcast.xml ONLY, and
+  pushes `<commit>:refs/heads/main`. The worktree is never switched, so the
+  later steps still see the freshly generated appcast and zip.
+- **Bug 2 — "GitHub Releases requires a tag".** "Create GitHub Release"
+  (softprops/action-gh-release@v2) has no tag ref on a version-named branch
+  cut and refuses to run. **Fix** (`51f9a24`): explicit
+  `tag_name`/`name: ${{ github.event.inputs.version || github.ref_name }}`
+  — correct for both tag cuts and branch cuts.
+- **Diagnostics that work without admin log access** (job-log downloads need
+  it): the check-run annotations endpoint
+  (`/repos/<owner>/<repo>/check-runs/<id>/annotations`) surfaces the failing
+  step's error message; `/compare/main...<branch>` shows ahead/behind counts;
+  the runs/jobs APIs are readable unauthenticated (60 req/h per IP).
+- **Release facts (observed 18.11):** the tag the release step creates does
+  NOT re-trigger the workflow (events created with GITHUB_TOKEN never fire
+  Actions). An API-created version-named branch DID fire the push event on
+  18.11 — contrary to the 16.11 note below; if a branch push does not
+  trigger, push a real commit to the branch. Release procedure that works:
+  ensure `scripts/release-notes/vX.Y.Z.md` exists on main, create branch
+  `vX.Y.Z` from main, and let the run publish the release, create the tag,
+  and commit the appcast to main.
+- **v1.1.9 shipped** (issue #21, PR #22 merged, CI 5/5 green): the Response
+  Times section in Settings now matches the model whitelist — whitelist set →
+  only whitelisted models listed; empty whitelist → all models with samples;
+  samples are kept on disk (rolling window caps them), re-whitelisting
+  restores history instantly.
+- v1.1.8 (#19) and v1.1.9 (#21) both await Sigurd's real-Mac confirmation;
+  the issues stay open until then.
 
 ## Status (16.11.2026 — v1.1.8 released via a version-named branch push)
 
