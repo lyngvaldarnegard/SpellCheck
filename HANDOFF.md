@@ -370,6 +370,34 @@ whole XML-attribute line), regenerates `appcast.xml` (commits to main), creates
 the GitHub Release. `actionlint .github/workflows/*.yml` must stay clean
 (`secrets` context is not allowed in step `if:` — use `env.X != ''` guards).
 
+**Release mechanics — read before touching `release.yml` (fixed 18.11.2026
+after these two bugs blocked v1.1.8 for >24 h):**
+
+- "Commit appcast.xml to main" must NEVER push the release branch tip. The
+  step builds a plumbing commit on top of the current `origin/main`
+  (`fetch origin main` → `read-tree` → `update-index --cacheinfo` →
+  `write-tree` → `commit-tree`) whose tree is main + appcast.xml only, and
+  pushes `<commit>:refs/heads/main`. Why: the workflow's GITHUB_TOKEN may
+  not push workflow-file changes, and a version-named release branch often
+  carries commits main does not have (workflow edits, retries) — pushing
+  its tip gets the whole push rejected and kills the run one step before
+  the release.
+- "Create GitHub Release" needs the explicit
+  `tag_name: ${{ github.event.inputs.version || github.ref_name }}` (same
+  for `name`). Without a tag ref — i.e. every version-named branch cut —
+  softprops/action-gh-release@v2 fails with "GitHub Releases requires a
+  tag".
+- Branch-cut procedure that works (v1.1.8 and v1.1.9 prove it): make sure
+  `scripts/release-notes/vX.Y.Z.md` is on main, create branch `vX.Y.Z` from
+  main, let the run publish the release, create the tag, and commit the
+  appcast to main. The GITHUB_TOKEN-created tag does NOT re-trigger
+  workflows (token-created events never fire Actions), so there is no
+  duplicate release run.
+- Debugging failed runs without admin log access: the check-run annotations
+  endpoint (`/repos/<owner>/<repo>/check-runs/<id>/annotations`) surfaces
+  the failing step's message; `/compare/main...<branch>` gives ahead/behind;
+  runs/jobs APIs work unauthenticated (rate limit 60/h per IP).
+
 Linux sandbox — Swift 6.2 Debian12 toolchain re-download per session (see git
 history of this file for the recipe). Only Core+Engine compile/test on Linux;
 App sources are checked with `swiftc -parse App/Sources/SpellCheck/*.swift`.
@@ -378,6 +406,13 @@ App sources are checked with `swiftc -parse App/Sources/SpellCheck/*.swift`.
 
 - The agent's `gh` token **cannot mutate GitHub**: no PR merge, no
   workflow_dispatch, no secret set. It CAN read runs/releases and push refs.
+- The Actions **GITHUB_TOKEN cannot push workflow-file changes** (commits
+  touching `.github/workflows/*` are rejected wholesale with only
+  `contents: write`); push those with a user/agent credential that has the
+  workflows scope.
+- **Events created with GITHUB_TOKEN do not trigger workflows** (e.g. the
+  tag the release step creates) — no duplicate runs, but also no automation
+  chained off it.
 - Repo Settings → Actions → Workflow permissions must be **Read and write**.
 - Do NOT protect `main` (release workflow pushes appcast commits to it).
 - Rate limit 429 → wait ~60 s, retry once, then stop.
