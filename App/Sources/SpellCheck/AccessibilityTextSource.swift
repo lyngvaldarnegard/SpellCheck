@@ -17,7 +17,9 @@ private let axLog = Logger(subsystem: "SpellCheck", category: "ax")
 private struct CapturedTarget {
     let pid: pid_t
     let appName: String
-    let element: AXUIElement
+    /// The AX element the text was grabbed from. Nil when the app exposed no
+    /// focused element at all and the clipboard fallback captured the text.
+    let element: AXUIElement?
     let originalText: String
     /// UTF-16 range of the grabbed text inside the element's full AXValue,
     /// when the grab came from the document value layer.
@@ -43,7 +45,9 @@ private struct CapturedTarget {
 ///   4. a clipboard fallback (posts ⌘C, reads the selection, restores the
 ///      previous clipboard) for editors that expose no usable AX text at all.
 ///      This layer always runs, even when the searches above have spent the
-///      whole grab budget on a large web tree.
+///      whole grab budget on a large web tree, and even when the app exposes
+///      no focused AX element at all (Electron/Notion) — the AX layers are
+///      then skipped entirely.
 ///
 /// Replacement is clipboard-based (FixKey-style): the corrected text is placed
 /// on the pasteboard and pasted over the still-intact selection with ⌘V, so
@@ -81,8 +85,23 @@ final class AccessibilityTextSource: TextSource, @unchecked Sendable {
             axLog.error("grab failed: no focused application (pid \(pid))")
             throw TextSourceError.noText
         }
+        // Electron apps (Notion) can expose NO focused element even while a
+        // text selection is intact. That used to abort the whole grab before
+        // the clipboard fallback could run — a false "No text found" on a
+        // perfectly selected text (issue #19, second round). Now the AX
+        // layers are skipped and the clipboard fallback gets the selection.
         guard let focused = copyAttribute(kAXFocusedUIElementAttribute, from: appElement, as: AXUIElement.self) else {
-            axLog.error("grab failed: no focused element in frontmost app (pid \(pid))")
+            axLog.error("grab: no focused element in frontmost app (pid \(pid)) — skipping AX layers, trying clipboard fallback")
+            if let copied = try await copySelectionViaClipboard(pid: pid, appName: appName) {
+                axLog.info("grab: clipboard fallback layer, no focused element (pid \(pid))")
+                let target = CapturedTarget(pid: pid, appName: appName, element: nil, originalText: copied)
+                nonisolated(unsafe) let captured = target
+                return GrabbedText(scope: .selection(copied)) { [weak self] newText in
+                    try await self?.replace(newText, target: captured)
+                } refocus: { [weak self] in
+                    await self?.reactivate(pid: pid, appName: appName)
+                }
+            }
             throw TextSourceError.noText
         }
 
@@ -237,9 +256,16 @@ final class AccessibilityTextSource: TextSource, @unchecked Sendable {
         // read, making the selection look empty and the grab wrongly report
         // "No text found".
         let clearedCount = pasteboard.changeCount
-        postKeyboardShortcut(modifiers: .maskCommand, virtualKey: 0x08 /* C */)
+        guard postKeyboardShortcut(modifiers: .maskCommand, virtualKey: 0x08 /* C */) else {
+            axLog.error("clipboard fallback: could not post the ⌘C event (pid \(pid))")
+            restorePasteboard(saved)
+            return nil
+        }
         var copied: String?
-        for _ in 0..<12 { // up to ~600 ms for the target app to service ⌘C
+        for _ in 0..<30 { // up to ~1.5 s for the target app to service ⌘C:
+            // Electron apps on heavy pages (Notion) can take longer than the
+            // old 600 ms window — a timeout made the grab falsely report
+            // "No text found" while the copy was still in flight.
             try await Task.sleep(nanoseconds: 50_000_000)
             if pasteboard.changeCount != clearedCount {
                 copied = pasteboard.string(forType: .string)
@@ -247,7 +273,10 @@ final class AccessibilityTextSource: TextSource, @unchecked Sendable {
             }
         }
         restorePasteboard(saved)
-        guard let copied, !copied.isEmpty else { return nil }
+        guard let copied, !copied.isEmpty else {
+            axLog.error("clipboard fallback: ⌘C produced no usable clipboard change within 1.5 s (pid \(pid))")
+            return nil
+        }
         return copied
     }
 
@@ -277,7 +306,16 @@ final class AccessibilityTextSource: TextSource, @unchecked Sendable {
     /// readable, the currently focused element must still be the captured one.
     private func ensureSelectionIntact(_ target: CapturedTarget) async throws {
         nonisolated(unsafe) let target = target
-        let element = target.element
+        // Captured without any AX element (clipboard fallback on an app that
+        // exposed no focused element): there is nothing to verify against but
+        // the app itself — only paste while the original app is still
+        // frontmost, exactly like the manual ⌘C/⌘V the user would do.
+        guard let element = target.element else {
+            let frontmost = await MainActor.run { NSWorkspace.shared.frontmostApplication?.processIdentifier }
+            if frontmost == target.pid { return }
+            axLog.error("replace aborted: target app no longer frontmost and no AX element to verify (pid \(target.pid))")
+            throw TextSourceError.selectionChanged(target.appName)
+        }
 
         // Stale-operation guard: when the document's value was readable at
         // grab time, it must still be identical now. If the user edited the
