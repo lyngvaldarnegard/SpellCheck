@@ -6,11 +6,11 @@
     <description>SpellCheck updates</description>
     <language>en</language>
     <item>
-      <title>Version 1.1.7</title>
-      <pubDate>Sun, 08 Nov 2026 13:30:14 +0000</pubDate>
-      <sparkle:shortVersionString>1.1.7</sparkle:shortVersionString>
-      <sparkle:version>1.1.7</sparkle:version>
-      <enclosure url="https://github.com/lyngvaldarnegard/SpellCheck/releases/download/v1.1.7/SpellCheck-macOS.zip" sparkle:edSignature="AxsLOuGfEdlEHEfOv3iv7h6WV2+Xzrwc5Cic+p0CYfUPh1KopcMPk6a4lw8bj2xrFiC84TXA7/brEm6aAnVRCg==" length="1967242" type="application/octet-stream"/>
+      <title>Version 1.1.8</title>
+      <pubDate>Wed, 18 Nov 2026 06:13:24 +0000</pubDate>
+      <sparkle:shortVersionString>1.1.8</sparkle:shortVersionString>
+      <sparkle:version>1.1.8</sparkle:version>
+      <enclosure url="https://github.com/lyngvaldarnegard/SpellCheck/releases/download/v1.1.8/SpellCheck-macOS.zip" sparkle:edSignature="4Oe7cjzUU8YA1G1/7sfRIuzzw8mlJPUTFc7RathyOVzqf0r7rXBrX3SGgGHeHV1dgJgnQk69l+1R4O4zZ3nXBg==" length="1967300" type="application/octet-stream"/>
     </item>
   </channel>
 </rss>
