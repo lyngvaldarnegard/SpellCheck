@@ -153,9 +153,18 @@ struct SettingsView: View {
     /// Learned per-model response times, ranked by IQM (fastest first) with
     /// a shared-axis box plot per model (issue #18). All values are seconds
     /// per 100 tokens (4 chars/token).
+    ///
+    /// The list matches the model whitelist (issue #21): when a whitelist is
+    /// active, only whitelisted models can serve requests, so only they are
+    /// shown. With no whitelist, every model with samples is shown. Samples
+    /// are never deleted here — the per-model rolling window caps them, and a
+    /// re-whitelisted model's learned history returns instantly.
     @ViewBuilder
     private var responseTimes: some View {
-        let stats = controller.responseTimeStats?() ?? []
+        let all = controller.responseTimeStats?() ?? []
+        let stats = settings.whitelistedModels.isEmpty
+            ? all
+            : all.filter { settings.whitelistedModels.contains($0.model) }
         if stats.isEmpty {
             Text("No response times learned yet — they are collected automatically as you use the app.")
                 .font(.footnote)
@@ -191,7 +200,7 @@ struct SettingsView: View {
             // Explicit height (GeometryReader inside a Form otherwise
             // collapses and the legend below overlaps the last row).
             .frame(height: CGFloat(stats.count) * 64 + 4)
-            Text("Box = Q1–Q3 · line = median · red dot = IQM. Axis spans Q1–Q3 across all models; extremes are not drawn. Seconds per 100 tokens (4 characters per token), from your own requests; ranked fastest first. Nothing is sent anywhere.")
+            Text("Box = Q1–Q3 · line = median · red dot = IQM. Axis spans Q1–Q3 across the shown models; extremes are not drawn. Seconds per 100 tokens (4 characters per token), from your own requests; ranked fastest first. With a model whitelist set, only whitelisted models are listed. Nothing is sent anywhere.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
