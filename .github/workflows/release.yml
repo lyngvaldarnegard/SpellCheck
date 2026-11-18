@@ -164,6 +164,12 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          # Explicit tag: when the release is cut from a version-named branch
+          # push there is no tag ref, and the action refuses to run without
+          # one ("GitHub Releases requires a tag"). ref_name is the branch
+          # name on branch cuts (v1.1.8) and the tag name on tag cuts.
+          tag_name: ${{ github.event.inputs.version || github.ref_name }}
+          name: ${{ github.event.inputs.version || github.ref_name }}
           files: |
             build/SpellCheck-macOS.zip
             appcast.xml
