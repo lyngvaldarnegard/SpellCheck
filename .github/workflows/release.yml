@@ -22,7 +22,7 @@ permissions:
 jobs:
   build:
     name: Build, package and publish
-    # Retry trigger 17.11.2026 (comment-only commit to fire the workflow)
+    # Retry trigger 18.11.2026 (comment-only commit to fire the workflow)
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
