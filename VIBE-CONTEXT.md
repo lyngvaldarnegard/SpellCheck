@@ -6,6 +6,19 @@ Sigurd's macOS menu-bar app that corrects text in any app: select text (or place
 
 The app was built by a different chat (Vibe Nuage Agent). The Vibe chat's job: hold the standing context and build the next-phase prompt with the prompt-bygger skill.
 
+## Status (16.11.2026 — v1.1.8 released via a version-named branch push)
+
+- Sigurd's Vibe automation cannot push git tags: its GitHub connector can
+  create branches and push files but not tags, and cannot dispatch
+  workflows. To unblock the pending v1.1.8 release (the issue #19 fix
+  on main since 15.11), `release.yml` now also triggers on pushes to
+  branches named like a version (`v*.*.*`), and v1.1.8 is being cut by
+  pushing the branch `v1.1.8` from main; the release step creates the
+  `v1.1.8` tag at the branch tip. Future releases can be cut the same
+  way when a tag push is unavailable.
+- Lesson: creating the branch alone did NOT fire the workflow (an
+  API-created ref appears not to emit the Actions push event); pushing
+  a real commit to the branch does.
 ## Status (15.11.2026 — false "No text found" fixed, v1.1.8 pending tag)
 
 - **Bug reported by Sigurd (screenshot): Safari with blue-selected text showed
