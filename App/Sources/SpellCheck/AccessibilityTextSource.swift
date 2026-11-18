@@ -231,24 +231,66 @@ final class AccessibilityTextSource: TextSource, @unchecked Sendable {
         let saved = snapshotPasteboard()
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        // Our own clearContents bumps the change count; the target app's ⌘C
-        // bumps it again. Poll for that second bump instead of a single read
-        // after a fixed 250 ms sleep: a slow app can service ⌘C after that
-        // read, making the selection look empty and the grab wrongly report
-        // "No text found".
+        // Our own clearContents bumps the change count; the target app's
+        // copy bumps it again. Poll for that second bump instead of a single
+        // read after a fixed 250 ms sleep: a slow app can service ⌘C after
+        // that read, making the selection look empty and the grab wrongly
+        // report "No text found".
+        //
+        // v1.1.10 (issue #19 persists on v1.1.9 in Notion): the 600 ms
+        // window was still too short. Electron apps can service the copy
+        // late — or drop a synthetic ⌘C entirely. The copy now gets ~2.5 s
+        // total, a second ⌘C at ~1 s, and — the reliable path for apps with
+        // a native menu bar — an AX press of the Edit > Copy menu item when
+        // nothing has landed after ~600 ms.
         let clearedCount = pasteboard.changeCount
-        postKeyboardShortcut(modifiers: .maskCommand, virtualKey: 0x08 /* C */)
         var copied: String?
-        for _ in 0..<12 { // up to ~600 ms for the target app to service ⌘C
+        var menuPressed = false
+        postKeyboardShortcut(modifiers: .maskCommand, virtualKey: 0x08 /* C */)
+        for tick in 0..<50 { // up to ~2.5 s for the target app to service the copy
             try await Task.sleep(nanoseconds: 50_000_000)
             if pasteboard.changeCount != clearedCount {
                 copied = pasteboard.string(forType: .string)
-                break
+                if let copied, !copied.isEmpty { break }
+            }
+            if tick == 12, pasteboard.changeCount == clearedCount {
+                axLog.info("clipboard fallback: no copy after 600 ms — pressing Edit > Copy menu item (pid \(pid))")
+                menuPressed = pressCopyMenuItem(pid: pid)
+            }
+            if tick == 20, pasteboard.changeCount == clearedCount {
+                axLog.info("clipboard fallback: still no copy after 1 s — re-posting ⌘C (pid \(pid))")
+                postKeyboardShortcut(modifiers: .maskCommand, virtualKey: 0x08 /* C */)
             }
         }
+        axLog.info("clipboard fallback: finished (menuPressed=\(menuPressed), landed=\(copied?.isEmpty == false))")
         restorePasteboard(saved)
         guard let copied, !copied.isEmpty else { return nil }
         return copied
+    }
+
+    /// Presses the target app's Edit > Copy menu item via Accessibility.
+    /// Electron apps (Notion) keep a native menu bar even when the web view
+    /// ignores synthetic keyboard events — AXPress on the real menu item
+    /// performs the same action ⌘C would. Titles are matched
+    /// case-insensitively (English menu names); no-op when no Copy item is
+    /// found. Returns true when a Copy item was found and pressed.
+    @discardableResult
+    private func pressCopyMenuItem(pid: pid_t) -> Bool {
+        let app = AXUIElementCreateApplication(pid)
+        bounded(app)
+        guard let menuBar = copyAttribute(kAXMenuBarAttribute, from: app, as: AXUIElement.self) else { return false }
+        guard let menus = copyAttribute(kAXChildrenAttribute, from: menuBar, as: [AXUIElement].self) else { return false }
+        for menu in menus {
+            guard let title = copyAttribute(kAXTitleAttribute, from: menu, as: String.self),
+                  title.lowercased() == "edit" else { continue }
+            guard let items = copyAttribute(kAXChildrenAttribute, from: menu, as: [AXUIElement].self) else { continue }
+            for item in items {
+                guard let itemTitle = copyAttribute(kAXTitleAttribute, from: item, as: String.self),
+                      itemTitle.lowercased() == "copy" else { continue }
+                return AXUIElementPerformAction(item, kAXPressAction as CFString) == .success
+            }
+        }
+        return false
     }
 
     // MARK: Replacement
