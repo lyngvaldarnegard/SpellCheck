@@ -23,7 +23,12 @@ jobs:
   build:
     name: Build, package and publish
     # Retry trigger 18.11.2026, 05:31 UTC (comment-only commit to fire the workflow)
-    runs-on: macos-15
+    # 18.11.2026, 12:15 UTC: macos-15 (arm64) pool has had zero capacity today -
+    # both v1.1.10 attempts sat 15-20 min in queue and were dropped
+    # ("The job was not acquired by Runner of type hosted even after multiple
+    # attempts"). ci.yml already builds on the Intel pool successfully all day,
+    # so the release builds on Intel too.
+    runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@v4
 
