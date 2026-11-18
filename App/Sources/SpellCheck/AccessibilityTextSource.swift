@@ -28,22 +28,54 @@ private struct CapturedTarget {
     var documentValue: String?
 }
 
-/// Grabs the current selection — or, when nothing is selected, the sentence
-/// around the caret — from the frontmost application through the Accessibility
-/// API, and writes the edited text back over the same selection.
+/// Collects a compact, human-readable trace of one grab attempt so the
+/// failure alert can say exactly which layer or copy measure produced
+/// nothing. Development-phase tooling: when a grab is reported broken, the
+/// alert itself carries everything needed to diagnose it — no Console.app
+/// step required. Dropped entirely once capture is fully polished.
+private final class GrabDiagnostics {
+    private(set) var lines: [String] = []
+    private let started = Date()
+
+    func add(_ line: String) {
+        lines.append(line)
+        axLog.info("grab diag: \(line, privacy: .public)")
+    }
+
+    /// One compact line for an alert, e.g.
+    /// "Notion (pid 417): AX 3.0 s, no selection exposed · ⌘C posted · menu Copy: no item · clipboard unchanged 2.5 s"
+    func summary(appName: String, pid: pid_t) -> String {
+        (["\(appName) (pid \(pid))"] + lines).joined(separator: " · ")
+    }
+}
+
+/// Grabs the user's selected text from the frontmost application through the
+/// Accessibility API and writes the edited text back over the same selection.
 ///
-/// Not every editor exposes the same AX attributes, so grabbing works in
-/// layers:
+/// By explicit user decision (18.11.2026) SpellCheck works on selected text
+/// only — the former "sentence around the caret" mode is gone; with nothing
+/// selected the app reports "No text found — select some text".
+///
+/// Editors expose their selection in very different ways, so grabbing works
+/// in layers:
 ///   1. `kAXSelectedTextAttribute` on the focused element (many apps),
 ///   2. the same attribute on a descendant of the focused element (web areas,
 ///      Electron/Chromium apps often put the text element deeper in the tree),
-///   3. `kAXValueAttribute` + `kAXSelectedTextRangeAttribute` (selection
-///      substring, or the sentence around the caret when the selection is
-///      empty),
-///   4. a clipboard fallback (posts ⌘C, reads the selection, restores the
-///      previous clipboard) for editors that expose no usable AX text at all.
-///      This layer always runs, even when the searches above have spent the
-///      whole grab budget on a large web tree.
+///   3. `kAXValueAttribute` + `kAXSelectedTextRangeAttribute` with a
+///      non-empty selected range,
+///   4. a clipboard fallback for editors that expose no usable AX text at
+///      all (Notion, some browser editors). Unconditional and outside the
+///      grab deadline: the AX searches above can spend the whole budget
+///      walking a large web tree. The copy reaches the target app through
+///      several independent pipes, because Electron apps drop or delay
+///      synthetic keyboard events unpredictably:
+///        - synthetic ⌘C posted at the HID event tap,
+///        - an Accessibility press of the app's Edit > Copy menu item
+///          (Electron apps keep a native menu bar),
+///        - the AX "Copy" action on the focused element,
+///        - ⌘C posted directly into the target process (CGEventPostToPid),
+///          which does not depend on the global event-routing state.
+///      Every measure is logged and reported in the failure diagnostics.
 ///
 /// Replacement is clipboard-based (FixKey-style): the corrected text is placed
 /// on the pasteboard and pasted over the still-intact selection with ⌘V, so
@@ -57,14 +89,20 @@ final class AccessibilityTextSource: TextSource, @unchecked Sendable {
 
     /// Per-Accessibility-call timeout (seconds). A slow or hung application
     /// can otherwise stall every AX round-trip for the OS default (up to 30+ s
-    /// combined), which made the picker appear to "do nothing" after ⌥L.
-    private static let axMessagingTimeout: Float = 0.75
-    /// Overall budget for one grab. Grabbing happens before the picker opens,
-    /// so this bounds how long ⌥L can take to show any response.
+    /// combined). Large Electron/Chromium documents (Notion) can legitimately
+    /// need more than the old 0.75 s per round-trip — their AX trees are built
+    /// lazily per call — so this went up; the overall deadline below stays the
+    /// hard cap on total grab time.
+    private static let axMessagingTimeout: Float = 1.25
+    /// Overall budget for the AX layers. Grabbing happens before the picker
+    /// opens, so this bounds how long ⌥L can take to show any response.
+    /// The clipboard fallback layer runs AFTER this deadline: it is the only
+    /// layer that works on Electron/browser selections and must always run.
     private static let grabDeadline: TimeInterval = 3.0
 
     func grab() async throws -> GrabbedText {
         let started = Date()
+        let diag = GrabDiagnostics()
         defer { axLog.info("grab finished after \(Int(-started.timeIntervalSinceNow * 1000)) ms") }
         guard AXIsProcessTrustedWithOptions([axPromptKey: false] as CFDictionary) else {
             axLog.error("grab failed: accessibility not trusted")
@@ -79,11 +117,11 @@ final class AccessibilityTextSource: TextSource, @unchecked Sendable {
         let systemWide = AXUIElementCreateSystemWide()
         guard let appElement = copyAttribute(kAXFocusedApplicationAttribute, from: systemWide, as: AXUIElement.self) else {
             axLog.error("grab failed: no focused application (pid \(pid))")
-            throw TextSourceError.noText
+            throw TextSourceError.noText("\(appName): Accessibility reports no focused application")
         }
         guard let focused = copyAttribute(kAXFocusedUIElementAttribute, from: appElement, as: AXUIElement.self) else {
             axLog.error("grab failed: no focused element in frontmost app (pid \(pid))")
-            throw TextSourceError.noText
+            throw TextSourceError.noText("\(appName): Accessibility reports no focused element")
         }
 
         // Layer 1 & 2: an element that reports its selected text directly.
@@ -107,48 +145,39 @@ final class AccessibilityTextSource: TextSource, @unchecked Sendable {
                 await self?.reactivate(pid: pid, appName: appName)
             }
         }
+        diag.add("AX \(String(format: "%.1f", -started.timeIntervalSinceNow)) s: no selected text exposed")
 
-        // Layer 3: full document value + selection range.
+        // Layer 3: selection range inside an exposed document value. Only a
+        // NON-EMPTY range counts — with nothing selected there is nothing to
+        // work on (caret-sentence mode was removed by user decision).
         if Date() < deadline,
            let editor = findEditorElement(root: focused, key: kAXValueAttribute, deadline: deadline),
            let document = copyAttribute(kAXValueAttribute, from: editor, as: String.self),
            !document.isEmpty,
-           let range = selectedTextRange(of: editor) {
-            if range.length > 0, let selected = substring(of: document, range: range), !selected.isEmpty {
-                axLog.info("grab: document-range layer (pid \(pid))")
-                var target = CapturedTarget(pid: pid, appName: appName, element: editor, originalText: selected)
-                target.documentRange = range
-                target.documentValue = document
-                nonisolated(unsafe) let captured = target
-                return GrabbedText(scope: .selection(selected)) { [weak self] newText in
-                    try await self?.replace(newText, target: captured)
-                } refocus: { [weak self] in
-                    await self?.reactivate(pid: pid, appName: appName)
-                }
-            }
-            let caret = range.location + range.length
-            if let extraction = TextScopeExtractor.sentence(in: document, caretOffset: caret) {
-                axLog.info("grab: caret-sentence layer (pid \(pid))")
-                var target = CapturedTarget(pid: pid, appName: appName, element: editor, originalText: extraction.text)
-                target.documentRange = CFRange(location: extraction.utf16Location, length: extraction.utf16Length)
-                target.documentValue = document
-                nonisolated(unsafe) let captured = target
-                return GrabbedText(scope: .sentence(extraction.text)) { [weak self] newText in
-                    try await self?.replace(newText, target: captured)
-                } refocus: { [weak self] in
-                    await self?.reactivate(pid: pid, appName: appName)
-                }
+           let range = selectedTextRange(of: editor),
+           range.length > 0,
+           let selected = substring(of: document, range: range),
+           !selected.isEmpty {
+            axLog.info("grab: document-range layer (pid \(pid))")
+            var target = CapturedTarget(pid: pid, appName: appName, element: editor, originalText: selected)
+            target.documentRange = range
+            target.documentValue = document
+            nonisolated(unsafe) let captured = target
+            return GrabbedText(scope: .selection(selected)) { [weak self] newText in
+                try await self?.replace(newText, target: captured)
+            } refocus: { [weak self] in
+                await self?.reactivate(pid: pid, appName: appName)
             }
         }
+        diag.add("AX \(String(format: "%.1f", -started.timeIntervalSinceNow)) s: no selection range")
 
         // Layer 4: clipboard fallback — the selection is copied with ⌘C and
         // the replacement is pasted over the (still intact) selection.
         // Unconditional and outside the grab deadline: the AX searches above
-        // can spend the whole 3 s budget walking a large web tree (Safari,
+        // can spend the whole budget walking a large web tree (Notion,
         // Chromium) without finding an editor element, and this layer — the
-        // only one that works on browser selections — must still get its
-        // chance to capture the text.
-        if let copied = try await copySelectionViaClipboard(pid: pid, appName: appName) {
+        // only one that works there — must still get its chance.
+        if let copied = try await copySelectionViaClipboard(pid: pid, appName: appName, diag: diag) {
             axLog.info("grab: clipboard fallback layer (pid \(pid))")
             let target = CapturedTarget(pid: pid, appName: appName, element: focused, originalText: copied)
             nonisolated(unsafe) let captured = target
@@ -159,7 +188,7 @@ final class AccessibilityTextSource: TextSource, @unchecked Sendable {
             }
         }
 
-        throw TextSourceError.noText
+        throw TextSourceError.noText(diag.summary(appName: appName, pid: pid))
     }
 
     // MARK: Grabbing helpers
@@ -221,32 +250,34 @@ final class AccessibilityTextSource: TextSource, @unchecked Sendable {
         return String(decoding: utf16[start..<end], as: UTF16.self)
     }
 
-    /// Last-resort grab: saves the clipboard, clears it, posts ⌘C, reads the
-    /// selection and restores the clipboard. Returns nil when nothing was
-    /// selected.
-    private func copySelectionViaClipboard(pid: pid_t, appName: String) async throws -> String? {
+    /// Last-resort grab: saves the clipboard, clears it, asks the target app
+    /// to copy its selection through several independent pipes, reads the
+    /// selection and restores the clipboard. Returns nil when nothing landed.
+    ///
+    /// v1.1.11 (issue #19, Notion): one synthetic ⌘C through the HID tap is
+    /// not enough — Electron apps can service the copy late or drop the
+    /// keystroke entirely. The copy now reaches the app through four
+    /// independent channels, staggered over a ~2.5 s window, and every
+    /// channel's outcome is recorded in `diag` so a failure report is
+    /// self-explanatory:
+    ///   t=0      ⌘C posted at the global HID tap (as before),
+    ///   t≈600 ms Edit > Copy menu item pressed via Accessibility,
+    ///   t≈600 ms AX "Copy" action on the focused element,
+    ///   t≈1 s    ⌘C posted directly into the target process (PostToPid),
+    ///   t≈1.6 s  global ⌘C and PostToPid re-posted once more.
+    private func copySelectionViaClipboard(pid: pid_t, appName: String, diag: GrabDiagnostics) async throws -> String? {
         guard await reactivate(pid: pid, appName: appName) else {
             throw TextSourceError.targetUnavailable(appName)
         }
         let saved = snapshotPasteboard()
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
-        // Our own clearContents bumps the change count; the target app's
-        // copy bumps it again. Poll for that second bump instead of a single
-        // read after a fixed 250 ms sleep: a slow app can service ⌘C after
-        // that read, making the selection look empty and the grab wrongly
-        // report "No text found".
-        //
-        // v1.1.10 (issue #19 persists on v1.1.9 in Notion): the 600 ms
-        // window was still too short. Electron apps can service the copy
-        // late — or drop a synthetic ⌘C entirely. The copy now gets ~2.5 s
-        // total, a second ⌘C at ~1 s, and — the reliable path for apps with
-        // a native menu bar — an AX press of the Edit > Copy menu item when
-        // nothing has landed after ~600 ms.
         let clearedCount = pasteboard.changeCount
         var copied: String?
-        var menuPressed = false
-        postKeyboardShortcut(modifiers: .maskCommand, virtualKey: 0x08 /* C */)
+
+        let hidPosted = postKeyboardShortcut(modifiers: .maskCommand, virtualKey: 0x08 /* C */)
+        diag.add(hidPosted ? "⌘C posted" : "⌘C: post failed")
+
         for tick in 0..<50 { // up to ~2.5 s for the target app to service the copy
             try await Task.sleep(nanoseconds: 50_000_000)
             if pasteboard.changeCount != clearedCount {
@@ -254,17 +285,27 @@ final class AccessibilityTextSource: TextSource, @unchecked Sendable {
                 if let copied, !copied.isEmpty { break }
             }
             if tick == 12, pasteboard.changeCount == clearedCount {
-                axLog.info("clipboard fallback: no copy after 600 ms — pressing Edit > Copy menu item (pid \(pid))")
-                menuPressed = pressCopyMenuItem(pid: pid)
+                let menu = pressCopyMenuItem(pid: pid)
+                diag.add(menu ? "menu Edit>Copy pressed" : "menu Edit>Copy: no usable item")
+                let axCopy = postCopyAction()
+                diag.add(axCopy ? "AX copy action sent" : "AX copy action: not supported")
             }
             if tick == 20, pasteboard.changeCount == clearedCount {
-                axLog.info("clipboard fallback: still no copy after 1 s — re-posting ⌘C (pid \(pid))")
-                postKeyboardShortcut(modifiers: .maskCommand, virtualKey: 0x08 /* C */)
+                let toPid = postKeyboardShortcutToPid(pid: pid, modifiers: .maskCommand, virtualKey: 0x08 /* C */)
+                diag.add(toPid ? "⌘C posted into process" : "⌘C into process: post failed")
+            }
+            if tick == 32, pasteboard.changeCount == clearedCount {
+                _ = postKeyboardShortcut(modifiers: .maskCommand, virtualKey: 0x08 /* C */)
+                _ = postKeyboardShortcutToPid(pid: pid, modifiers: .maskCommand, virtualKey: 0x08 /* C */)
+                diag.add("⌘C re-posted")
             }
         }
-        axLog.info("clipboard fallback: finished (menuPressed=\(menuPressed), landed=\(copied?.isEmpty == false))")
+        axLog.info("clipboard fallback: finished (copied=\(copied?.isEmpty == false))")
         restorePasteboard(saved)
-        guard let copied, !copied.isEmpty else { return nil }
+        guard let copied, !copied.isEmpty else {
+            diag.add("clipboard unchanged after 2.5 s")
+            return nil
+        }
         return copied
     }
 
@@ -272,8 +313,8 @@ final class AccessibilityTextSource: TextSource, @unchecked Sendable {
     /// Electron apps (Notion) keep a native menu bar even when the web view
     /// ignores synthetic keyboard events — AXPress on the real menu item
     /// performs the same action ⌘C would. Titles are matched
-    /// case-insensitively (English menu names); no-op when no Copy item is
-    /// found. Returns true when a Copy item was found and pressed.
+    /// case-insensitively (English menu names); returns false when no Copy
+    /// item is found.
     @discardableResult
     private func pressCopyMenuItem(pid: pid_t) -> Bool {
         let app = AXUIElementCreateApplication(pid)
@@ -293,12 +334,25 @@ final class AccessibilityTextSource: TextSource, @unchecked Sendable {
         return false
     }
 
+    /// Sends the AX "Copy" action to the currently focused element. Native
+    /// AppKit text views implement it; for Electron web areas it depends on
+    /// the Chromium AX build. A best-effort complement to the menu press.
+    @discardableResult
+    private func postCopyAction() -> Bool {
+        let systemWide = AXUIElementCreateSystemWide()
+        guard let appElement = copyAttribute(kAXFocusedApplicationAttribute, from: systemWide, as: AXUIElement.self),
+              let focused = copyAttribute(kAXFocusedUIElementAttribute, from: appElement, as: AXUIElement.self) else {
+            return false
+        }
+        bounded(focused)
+        return AXUIElementPerformAction(focused, kAXCopyAction as CFString) == .success
+    }
+
     // MARK: Replacement
 
     /// Replaces the captured selection with `newText`:
     ///   1. re-activates the original app,
-    ///   2. verifies the captured selection is still intact (re-selecting the
-    ///      captured range when the app allows it) — aborts otherwise,
+    ///   2. verifies the captured selection is still intact — aborts otherwise,
     ///   3. pastes ONCE over the selection.
     /// No post-paste verification and no extra waits: the user sees the result
     /// on screen (explicit decision — the read-back only added latency and
@@ -445,6 +499,24 @@ final class AccessibilityTextSource: TextSource, @unchecked Sendable {
         keyUp.flags = modifiers
         keyDown.post(tap: .cghidEventTap)
         keyUp.post(tap: .cghidEventTap)
+        return true
+    }
+
+    /// Posts ⌘C directly into the target process. Unlike the global HID tap,
+    /// this does not depend on frontmost routing or on the target app's
+    /// handling of events it receives through the system event stream — the
+    /// events are enqueued straight into the process.
+    @discardableResult
+    private func postKeyboardShortcutToPid(pid: pid_t, modifiers: CGEventFlags, virtualKey: CGKeyCode) -> Bool {
+        guard let source = CGEventSource(stateID: .hidSystemState),
+              let keyDown = CGEvent(keyboardEventSource: source, virtualKey: virtualKey, keyDown: true),
+              let keyUp = CGEvent(keyboardEventSource: source, virtualKey: virtualKey, keyDown: false) else {
+            return false
+        }
+        keyDown.flags = modifiers
+        keyUp.flags = modifiers
+        CGEventPostToPid(pid, keyDown)
+        CGEventPostToPid(pid, keyUp)
         return true
     }
 
