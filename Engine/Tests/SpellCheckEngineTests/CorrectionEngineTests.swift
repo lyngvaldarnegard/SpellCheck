@@ -172,7 +172,7 @@ struct CorrectionEngineTests {
 
     @Test func sourceErrorIsReported() async {
         let source = FakeSource()
-        source.error = TextSourceError.noText
+        source.error = TextSourceError.noText("")
         let backend = FakeBackend()
         let recorder = EventRecorder()
         let engine = makeEngine(backend: backend, source: source, recorder: recorder)
