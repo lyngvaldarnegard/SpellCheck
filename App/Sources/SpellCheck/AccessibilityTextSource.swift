@@ -518,8 +518,8 @@ final class AccessibilityTextSource: TextSource, @unchecked Sendable {
         }
         keyDown.flags = modifiers
         keyUp.flags = modifiers
-        CGEventPostToPid(pid, keyDown)
-        CGEventPostToPid(pid, keyUp)
+        keyDown.postToPid(pid)
+        keyUp.postToPid(pid)
         return true
     }
 
