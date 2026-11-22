@@ -6,6 +6,14 @@ Sigurd's macOS menu-bar app that corrects text in any app: select text (or place
 
 The app was built by a different chat (Vibe Nuage Agent). The Vibe chat's job: hold the standing context and build the next-phase prompt with the prompt-bygger skill.
 
+## Status (22.11.2026 — v1.1.11 shipped; obsolete CGEventPostToPid was the App-build CI blocker)
+
+- **v1.1.10 (18.11, issue #19 hardening round 2):** layer-4 fallback waits ~2.5 s for the clipboard, presses Edit > Copy via AX at ~600 ms, re-posts ⌘C at ~1 s.
+- **PR #25 merged (9bd0768, 22.11) = v1.1.11 (issue #19 round 3):** selection-only captures by binding user decision (caret-sentence mode removed — with nothing selected the app reports "No text found — select some text"); `TextSourceError.noText` now carries a diagnostic String; a GrabDiagnostics trace (which AX layers ran, which copy measures posted) ends up in the failure alert; the clipboard copy reaches the target app through four channels staggered over ~2.5 s (HID-tap ⌘C, AX Edit > Copy press, AX "Copy" action on the focused element, ⌘C posted into the target pid). AX messaging timeout 0.75 s → 1.25 s.
+- **CI App-build failure root cause (22.11):** `CGEventPostToPid` is obsoleted in Swift (replaced by the `CGEvent.postToPid(_:)` instance method); two calls in `postKeyboardShortcutToPid` failed the build. Fixed in 38366d38. Diagnosed by pushing a diag branch (`diag-app-build`) whose workflow runs `swift build --package-path App -c release` on the macOS runner and posts the output to a repo issue via `gh issue create` with GITHUB_TOKEN (`issues: write`) — the only route that works without admin log access; the created issue is public and readable unauthenticated. Issue #26 (the diag output) was closed after use; the diag branch/workflow is kept for future build-log needs.
+- **Release runner fix permanent:** release.yml now `runs-on: macos-15-intel` on main (b9727f2) as well — the v1.1.11 cut initially queued on macos-15 (arm64) where capacity is unreliable (18.11: zero capacity all day, jobs dropped after 15-20 min). A second cut commit (074b186) on the v1.1.11 branch re-fired the release on Intel. On 22.11 the arm64 run also eventually got a runner — both runs completed; each committed an appcast; the final appcast on main (03f6d305) is valid, signed (sparkle:edSignature present).
+- **v1.1.11 published (22.11 09:39 UTC):** assets SpellCheck-macOS.zip + appcast.xml on the release; not draft, not prerelease. **Issue #19 stays open until Sigurd verifies a Notion grab on his Mac** (selection-only + must a failure alert show the diagnostic trace).
+
 ## Status (18.11.2026 — v1.1.9 shipped; the >24 h v1.1.8 release blockage root-caused and fixed)
 
 Two independent release-CI bugs had blocked v1.1.8 for over 24 hours
