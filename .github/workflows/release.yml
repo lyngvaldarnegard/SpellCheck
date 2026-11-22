@@ -23,7 +23,11 @@ jobs:
   build:
     name: Build, package and publish
     # Retry trigger 18.11.2026, 05:31 UTC (comment-only commit to fire the workflow)
-    runs-on: macos-15
+    # 22.11.2026: macos-15 (arm64) queue capacity is unreliable - on 18.11 the
+    # pool had zero capacity all day (jobs dropped after 15-20 min in queue),
+    # and the v1.1.11 release sat queued on arm64 today. ci.yml has been
+    # building green on macos-15-intel continuously, so release on Intel too.
+    runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@v4
 
