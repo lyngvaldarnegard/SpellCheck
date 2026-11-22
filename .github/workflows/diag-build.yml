@@ -1,0 +1,37 @@
+name: Diagnose App build
+
+on:
+  push:
+    branches: ['diag-app-build']
+
+permissions:
+  issues: write
+
+jobs:
+  diagnose:
+    name: App build diagnose
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+      - uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: "6.2"
+      - name: Build app
+        id: build
+        continue-on-error: true
+        run: |
+          swift build --package-path App -c release 2>&1 | tee build-output.log
+          echo "BUILD_EXIT_SUCCESS" >> build-output.log
+      - name: Post build output to issue
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          {
+            echo "App build diagnostics from run ${GITHUB_RUN_ID} on diag-app-build (head ${GITHUB_SHA})"
+            echo ""
+            echo '~~~'
+            cat build-output.log
+            echo '~~~'
+          } > comment.md
+          gh issue create --repo "${GITHUB_REPOSITORY}" --title "App build diagnostics (automated)" --body-file comment.md
