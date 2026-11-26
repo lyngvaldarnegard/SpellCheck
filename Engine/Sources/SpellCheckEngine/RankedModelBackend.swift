@@ -3,9 +3,8 @@ import SpellCheckCore
 
 /// Serves each request from a user-approved whitelist of models, ordered by
 /// learned speed: the model with the fastest estimated response time serves
-/// the request; if it fails for a retryable reason (capacity, rate limit,
-/// server error, timeout, unusable response), the next fastest is tried, and
-/// so on. The user chooses which models are acceptable (quality/cost); the
+/// the request; if it fails for any reason other than cancellation, the next
+/// one is tried, and so on. The user chooses which models are acceptable (quality/cost); the
 /// app chooses which one to actually use (speed), from its own measured data.
 ///
 /// The ranking is recomputed per request from the estimator, so it always
@@ -19,6 +18,7 @@ public final class RankedModelBackend: CorrectionBackend, @unchecked Sendable {
     private let models: [String]
     private let makeBackend: (String) -> any CorrectionBackend
     private let estimatedSeconds: (String) -> Double?
+    private let onAttempt: (String, String?) -> Void
     private let lock = NSLock()
     private var lastServingModel: String?
 
@@ -28,14 +28,18 @@ public final class RankedModelBackend: CorrectionBackend, @unchecked Sendable {
     ///   - makeBackend: builds a concrete backend for one model id.
     ///   - estimatedSeconds: learned response-time estimate for one model at
     ///     a fixed reference length (nil = no data at all).
+    ///   - onAttempt: told the outcome of every attempt: the model, and a
+    ///     failure message (nil when the model answered).
     public init(
         models: [String],
         makeBackend: @escaping (String) -> any CorrectionBackend,
-        estimatedSeconds: @escaping (String) -> Double?
+        estimatedSeconds: @escaping (String) -> Double?,
+        onAttempt: @escaping (String, String?) -> Void = { _, _ in }
     ) {
         self.models = models
         self.makeBackend = makeBackend
         self.estimatedSeconds = estimatedSeconds
+        self.onAttempt = onAttempt
     }
 
     public var displayName: String { "Ranked model whitelist" }
@@ -63,16 +67,24 @@ public final class RankedModelBackend: CorrectionBackend, @unchecked Sendable {
             do {
                 let result = try await makeBackend(model).correct(text: text, prompt: prompt, sharedPrompt: sharedPrompt)
                 recordServing(model)
+                onAttempt(model, nil)
                 return result
             } catch {
+                if Self.isCancellation(error) { throw error }
                 lastError = error
-                guard FallbackPolicy.shouldFallback(after: error) else { throw error }
-                // Retryable: try the next fastest whitelisted model.
+                onAttempt(model, CorrectionEngine.message(for: error))
+                // A broken model must not stop the request: try the next one.
             }
         }
         throw CorrectionError.backendFailed(
             "None of the whitelisted models could serve the request: \(CorrectionEngine.message(for: lastError))"
         )
+    }
+
+    private static func isCancellation(_ error: Error) -> Bool {
+        if error is CancellationError { return true }
+        if (error as? URLError)?.code == .cancelled { return true }
+        return (error as? CorrectionError) == .cancelled
     }
 
     /// NSLock is unavailable in async contexts; this synchronous helper is.
