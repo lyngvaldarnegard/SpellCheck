@@ -40,8 +40,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) var settingsController: SettingsWindowController!
     private(set) var promptEditorController: PromptEditorWindowController!
     private var hotKeyMonitor: HotKeyMonitor?
-    private var engine: CorrectionEngine?
-    private var settingsStore: SettingsStore?
+    private(set) var engine: CorrectionEngine?
+    var settingsStore: SettingsStore?
     private var updaterController: UpdaterController?
     private let textSource = AccessibilityTextSource()
     private var pickerController: PromptPickerWindowController?
@@ -61,6 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var workingIndicator: WorkingIndicatorController?
     /// Learns per-model response times (persisted) to drive the progress ring.
     private var responseTimeEstimator: ResponseTimeEstimator?
+    private let modelStatusLog = ModelStatusLog()
     /// UTF-16 length of the captured text of the run currently in flight.
     private var lastRunInputLength = 0
     private(set) var settings: AppSettings = .default
@@ -120,6 +121,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsController.responseTimeStats = { [weak self] in
             self?.responseTimeEstimator?.statistics() ?? []
         }
+        settingsController.modelStatusLog = modelStatusLog
         settingsController.purgeUnknownModels = { [weak self] models in
             self?.responseTimeEstimator?.purgeModels(notIn: models)
         }
@@ -165,12 +167,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Persists settings to disk, then applies them. Throws when the write
     /// fails so the UI can show an error instead of silently discarding.
-    private func saveSettings(_ newSettings: AppSettings) async throws {
+    func saveSettings(_ newSettings: AppSettings) async throws {
         guard let settingsStore else {
             throw CorrectionError.backendFailed("Settings storage is unavailable")
         }
         try await settingsStore.update { _ in newSettings }
-        settings = newSettings
+        // `applySettings` compares against the current `settings` to find what
+        // changed, so they must not be overwritten before it runs.
         applySettings(newSettings)
         try applyLoginItem(newSettings)
     }
@@ -186,6 +189,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             registerHotKey()
         }
         statusBarController?.apply(newSettings)
+        if old.apiKey != newSettings.apiKey || old.baseURL != newSettings.baseURL {
+            modelStatusLog.reset()
+        }
         if old.apiKey != newSettings.apiKey
             || old.model != newSettings.model
             || old.backupModel != newSettings.backupModel
@@ -234,6 +240,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // @unchecked Sendable class with an internal lock), never the
             // main-actor-isolated self.
             let estimator = responseTimeEstimator
+            let statusLog = modelStatusLog
             return RankedModelBackend(
                 models: trimmedWhitelist,
                 makeBackend: { model in
@@ -243,6 +250,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     // nil = the model has no samples of its own yet ->
                     // ranked first and tried once, so it earns a real number.
                     estimator?.ownEstimate(model: model, inputLength: 1000)
+                },
+                onAttempt: { model, failure in
+                    statusLog.record(model: model, failure: failure)
                 }
             )
         }
@@ -258,6 +268,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func registerHotKey() {
         hotKeyMonitor?.stop()
+        // A cleared shortcut is a deliberate choice, not an error to report.
+        guard settings.hotKey.isSet else {
+            hotKeyMonitor = nil
+            return
+        }
         let monitor = HotKeyMonitor(hotKey: settings.hotKey) { [weak self] in
             Task { @MainActor in self?.openPromptPicker() }
         }

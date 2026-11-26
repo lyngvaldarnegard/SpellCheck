@@ -444,16 +444,47 @@ struct RankedModelBackendTests {
         #expect(backend.modelKey == "large")
     }
 
-    @Test func nonRetryableFailureDoesNotFallThrough() async {
-        // A 401 (auth) is a configuration problem on every model: fail fast.
+    @Test func anyModelFailureFallsThroughToTheNextModel() async throws {
+        // A model that is missing or rejects the request must not block it.
+        for status in [400, 401, 404] {
+            let (backend, _) = makeBackend(
+                rank: ["flash": 1, "large": 5],
+                errors: ["flash": CorrectionError.http(status: status, message: "broken")]
+            )
+            let result = try await backend.correct(text: "hi", prompt: "p", sharedPrompt: "")
+            #expect(result == "ok from large")
+        }
+    }
+
+    @Test func cancellationDoesNotFallThrough() async {
         let (backend, scripted) = makeBackend(
             rank: ["flash": 1, "large": 5],
-            errors: ["flash": CorrectionError.http(status: 401, message: "unauthorized")]
+            errors: ["flash": CorrectionError.cancelled]
         )
         await #expect(throws: CorrectionError.self) {
             _ = try await backend.correct(text: "hi", prompt: "p", sharedPrompt: "")
         }
         #expect(scripted.first { $0.key == "large" }!.callCount == 0)
+    }
+
+    @Test func everyAttemptIsReportedToTheStatusLog() async throws {
+        let broken = WhitelistScriptedBackend(key: "broken", error: CorrectionError.http(status: 404, message: "no such model"))
+        let working = WhitelistScriptedBackend(key: "working")
+        let byModel = ["broken": broken, "working": working]
+        let log = ModelStatusLog()
+        let backend = RankedModelBackend(
+            models: ["broken", "working"],
+            makeBackend: { byModel[$0]! },
+            estimatedSeconds: { _ in nil },
+            onAttempt: { log.record(model: $0, failure: $1) }
+        )
+        _ = try await backend.correct(text: "hi", prompt: "p", sharedPrompt: "")
+        #expect(log.lastFailure(for: "broken")?.contains("404") == true)
+        #expect(log.lastFailure(for: "working") == nil)
+        #expect(log.lastAnsweringModel == "working")
+        log.reset()
+        #expect(log.lastFailure(for: "broken") == nil)
+        #expect(log.lastAnsweringModel == nil)
     }
 
     @Test func allFailingProducesOneClearError() async {
@@ -545,5 +576,35 @@ struct RankedModelExplorationTests {
         #expect(estimator.estimate(model: "large", inputLength: 1000) != nil)
         #expect(estimator.ownEstimate(model: "large", inputLength: 1000) == nil)
         #expect(estimator.ownEstimate(model: "flash", inputLength: 1000) != nil)
+    }
+}
+
+struct ResponseTimeListTests {
+
+    private func statistics(_ timings: [(String, Double)]) -> [ResponseTimeEstimator.ModelStatistics] {
+        let estimator = ResponseTimeEstimator(fileURL: nil)
+        for (model, seconds) in timings {
+            estimator.record(model: model, inputLength: 400, seconds: seconds)
+        }
+        return estimator.statistics()
+    }
+
+    @Test func everyWhitelistedModelIsListedInTryOrder() {
+        let rows = ResponseTimeList.rows(
+            whitelist: ["slow", "new-b", "fast", "new-a"],
+            statistics: statistics([("slow", 9), ("fast", 2), ("removed", 1)])
+        )
+        #expect(rows.map(\.model) == ["new-b", "new-a", "fast", "slow"])
+        #expect(rows.map { $0.statistics == nil } == [true, true, false, false])
+    }
+
+    @Test func listIsCompleteBeforeAnyTimingExists() {
+        let rows = ResponseTimeList.rows(whitelist: ["a", " b ", "a", ""], statistics: [])
+        #expect(rows.map(\.model) == ["a", "b"])
+    }
+
+    @Test func withoutAWhitelistEveryTimedModelIsListed() {
+        let rows = ResponseTimeList.rows(whitelist: [], statistics: statistics([("slow", 9), ("fast", 2)]))
+        #expect(rows.map(\.model) == ["fast", "slow"])
     }
 }

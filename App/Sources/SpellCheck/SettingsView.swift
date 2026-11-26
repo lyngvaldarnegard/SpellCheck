@@ -150,22 +150,19 @@ struct SettingsView: View {
         }
     }
 
-    /// Learned per-model response times, ranked by IQM (fastest first) with
-    /// a shared-axis box plot per model (issue #18). All values are seconds
-    /// per 100 tokens (4 chars/token).
-    ///
-    /// The list matches the model whitelist (issue #21): when a whitelist is
-    /// active, only whitelisted models can serve requests, so only they are
-    /// shown. With no whitelist, every model with samples is shown. Samples
-    /// are never deleted here — the per-model rolling window caps them, and a
-    /// re-whitelisted model's learned history returns instantly.
+    /// Per-model response times. With a whitelist, every whitelisted model is
+    /// listed in the order it is tried (see `ResponseTimeList`), including
+    /// models that have no timing yet. Timed models get a shared-axis box plot
+    /// (issue #18). All values are seconds per 100 tokens (4 chars/token).
+    /// Samples are never deleted here — the per-model rolling window caps
+    /// them, and a re-whitelisted model's learned history returns instantly.
     @ViewBuilder
     private var responseTimes: some View {
-        let all = controller.responseTimeStats?() ?? []
-        let stats = settings.whitelistedModels.isEmpty
-            ? all
-            : all.filter { settings.whitelistedModels.contains($0.model) }
-        if stats.isEmpty {
+        let rows = ResponseTimeList.rows(
+            whitelist: settings.whitelistedModels,
+            statistics: controller.responseTimeStats?() ?? []
+        )
+        if rows.isEmpty {
             Text("No response times learned yet — they are collected automatically as you use the app.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
@@ -175,34 +172,69 @@ struct SettingsView: View {
             // axis spans only Q1–Q3 (per user decision): the observed
             // min/max extremes are NOT drawn — one slow outlier would
             // otherwise stretch the axis and waste half the plot.
-            let axisMin = stats.map(\.firstQuartileSeconds).min() ?? 0
-            let axisMax = max(stats.map(\.thirdQuartileSeconds).max() ?? 1, axisMin + 0.1)
+            let timed = rows.compactMap(\.statistics)
+            let axisMin = timed.map(\.firstQuartileSeconds).min() ?? 0
+            let axisMax = max(timed.map(\.thirdQuartileSeconds).max() ?? 1, axisMin + 0.1)
             GeometryReader { geo in
                 let plotWidth = max(120, geo.size.width - 250)
                 VStack(alignment: .leading, spacing: 10) {
-                    ForEach(stats, id: \.model) { stat in
-                        HStack(alignment: .center, spacing: 8) {
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(stat.model)
-                                    .font(.body.weight(.semibold))
-                                    .lineLimit(1)
-                                    .truncationMode(.middle)
-                                Text("\(stat.sampleCount) samples · IQM \(stat.interQuartileMeanSeconds, format: .number.precision(.fractionLength(1))) s")
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
-                            }
-                            .frame(width: 226, alignment: .leading)
-                            BoxPlot(stat: stat, axisMin: axisMin, axisMax: axisMax, width: plotWidth)
-                        }
+                    ForEach(rows) { row in
+                        responseTimeRow(row, axisMin: axisMin, axisMax: axisMax, plotWidth: plotWidth)
+                            .frame(height: 54)
                     }
                 }
             }
             // Explicit height (GeometryReader inside a Form otherwise
             // collapses and the legend below overlaps the last row).
-            .frame(height: CGFloat(stats.count) * 64 + 4)
-            Text("Box = Q1–Q3 · line = median · red dot = IQM. Axis spans Q1–Q3 across the shown models; extremes are not drawn. Seconds per 100 tokens (4 characters per token), from your own requests; ranked fastest first. With a model whitelist set, only whitelisted models are listed. Nothing is sent anywhere.")
+            .frame(height: CGFloat(rows.count) * 64 + 4)
+            Text("With a model whitelist, every whitelisted model is listed in the order it is tried: models not timed yet first, then fastest first. If one fails, the next is tried. Box = Q1–Q3 · line = median · red dot = IQM, in seconds per 100 tokens. Failures are remembered until the app quits; reopen Settings to refresh results.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
+        }
+    }
+
+    private func responseTimeRow(
+        _ row: ResponseTimeList.Row,
+        axisMin: Double,
+        axisMax: Double,
+        plotWidth: CGFloat
+    ) -> some View {
+        let failure = controller.modelStatusLog?.lastFailure(for: row.model)
+        let answeredLast = controller.modelStatusLog?.lastAnsweringModel == row.model
+        return HStack(alignment: .center, spacing: 8) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(row.model)
+                    .font(.body.weight(.semibold))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                if let stat = row.statistics {
+                    Text("\(stat.sampleCount) samples · IQM \(SecondsFormat.string(stat.interQuartileMeanSeconds))")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("Not timed yet")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+                if answeredLast {
+                    Text("Answered the last request")
+                        .font(.footnote)
+                        .foregroundStyle(.green)
+                } else if let failure {
+                    Text("Last try failed: \(failure)")
+                        .font(.footnote)
+                        .foregroundStyle(.orange)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                        .help(failure)
+                }
+            }
+            .frame(width: 226, alignment: .leading)
+            if let stat = row.statistics {
+                BoxPlot(stat: stat, axisMin: axisMin, axisMax: axisMax, width: plotWidth)
+            } else {
+                Spacer(minLength: 0)
+            }
         }
     }
 
@@ -318,6 +350,13 @@ private struct ModelPickerField: View {
     }
 }
 
+/// One way of writing a duration, using the system's decimal separator.
+private enum SecondsFormat {
+    static func string(_ seconds: Double) -> String {
+        String(format: "%.1f s", locale: Locale.current, seconds)
+    }
+}
+
 /// One horizontal box plot on a shared seconds axis: whiskers span the
 /// observed min–max, the box spans Q1–Q3, the line is the median and the
 /// dot marks the inter-quartile mean (the number the ranking and the
@@ -381,7 +420,7 @@ private struct BoxPlot: View {
     }
 
     private static func value(_ seconds: Double) -> String {
-        String(format: "%.1fs", seconds)
+        SecondsFormat.string(seconds)
     }
 
     /// The labelled elements (Q1, median, Q3), left to right. Each label
@@ -401,7 +440,7 @@ private struct BoxPlot: View {
         var kept: [(position: CGFloat, text: String, line: Int)] = []
         for (position, seconds) in all.sorted(by: { $0.0 < $1.0 }) {
             var line = 0
-            while line < lineEnds.count && position - lineEnds[line] < 26 {
+            while line < lineEnds.count && position - lineEnds[line] < 30 {
                 line += 1
             }
             if line >= lineEnds.count { line = lineEnds.count - 1 }
@@ -596,6 +635,8 @@ final class SettingsWindowController: NSWindowController {
     /// models the provider no longer serves can be purged (set by
     /// AppDelegate).
     var purgeUnknownModels: (([String]) -> Void)?
+    /// Which model answered last and which failed (set by AppDelegate).
+    var modelStatusLog: ModelStatusLog?
 
     init(settings: AppSettings) {
         self.initialSettings = settings

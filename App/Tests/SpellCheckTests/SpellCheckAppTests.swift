@@ -1,5 +1,7 @@
+import Foundation
 import Testing
 import SpellCheckCore
+import SpellCheckEngine
 @testable import SpellCheck
 
 struct AppWiringTests {
@@ -86,5 +88,28 @@ struct WorkingIndicatorTests {
         indicator.hide()
         indicator.show(estimatedSeconds: 2)
         #expect(indicator.isShowing == true)
+    }
+}
+
+@MainActor
+struct LiveSettingsTests {
+
+    /// Saving must apply the change to the running app, without a restart.
+    @Test func savingBackendSettingsRebuildsTheEngine() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let delegate = AppDelegate()
+        delegate.settingsStore = try SettingsStore(directory: directory)
+
+        var changed = delegate.settings
+        changed.whitelistedModels = ["model-a"]
+        try await delegate.saveSettings(changed)
+        let first = try #require(delegate.engine)
+        #expect(first.modelKey == "model-a")
+
+        changed.whitelistedModels = ["model-b"]
+        try await delegate.saveSettings(changed)
+        #expect(delegate.engine?.modelKey == "model-b")
     }
 }
